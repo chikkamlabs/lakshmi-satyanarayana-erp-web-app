@@ -1,29 +1,52 @@
 'use client';
 
-import React, { useState } from 'react';
-import { X, Truck, CheckCircle2, AlertCircle, Loader2, MapPin, Phone, Building2, Calendar, ShoppingBag, Clock, Trash2 } from 'lucide-react';
-import { updateDistributor, deleteDistributor, DistributorStatus, Distributor } from '@/lib/distributorStore';
+import React, { useState, useEffect } from 'react';
+import {
+  X,
+  Package,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  Tag,
+  IndianRupee,
+  Layers,
+  ShieldAlert,
+  Clock,
+  Calendar,
+  Trash2,
+  AlertTriangle,
+} from 'lucide-react';
+import {
+  updateProduct,
+  deleteProduct,
+  fetchCategoriesForDropdown,
+  ProductStatus,
+  Product,
+  CategoryOption,
+} from '@/lib/productsStore';
 
-interface OpenDistributorProps {
-  distributor: Distributor | null;
+interface OpenProductProps {
+  product: Product | null;
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: (updatedDistributor: Distributor) => void;
+  onSuccess: (updatedProduct: Product) => void;
   onDeleteSuccess?: (deletedId: string) => void;
 }
 
-export default function OpenDistributorModal({
-  distributor,
+const COMMON_UNITS = ['Piece', 'Packet', 'Box', 'Kg', 'Tin', 'Gram', 'Liter', 'Meter'];
+
+export default function OpenProductModal({
+  product,
   isOpen,
   onClose,
   onSuccess,
   onDeleteSuccess,
-}: OpenDistributorProps) {
-  if (!isOpen || !distributor) return null;
+}: OpenProductProps) {
+  if (!isOpen || !product) return null;
 
   return (
-    <OpenDistributorModalContent
-      distributor={distributor}
+    <OpenProductModalContent
+      product={product}
       onClose={onClose}
       onSuccess={onSuccess}
       onDeleteSuccess={onDeleteSuccess}
@@ -31,26 +54,56 @@ export default function OpenDistributorModal({
   );
 }
 
-function OpenDistributorModalContent({
-  distributor,
+function OpenProductModalContent({
+  product,
   onClose,
   onSuccess,
   onDeleteSuccess,
 }: {
-  distributor: Distributor;
+  product: Product;
   onClose: () => void;
-  onSuccess: (updatedDistributor: Distributor) => void;
+  onSuccess: (updatedProduct: Product) => void;
   onDeleteSuccess?: (deletedId: string) => void;
 }) {
-  const [distributorId, setDistributorId] = useState(distributor.distributor_id || '');
-  const [distributorName, setDistributorName] = useState(distributor.distributor_name || '');
-  const [address, setAddress] = useState(distributor.address || '');
-  const [mobile, setMobile] = useState(distributor.mobile || '');
-  const [gstin, setGstin] = useState(distributor.gstin || '');
-  const [status, setStatus] = useState<DistributorStatus>(distributor.status || 'active');
-  const [loading, setLoading] = useState(false);
+  const [name, setName] = useState(product.name || '');
+  const [productId, setProductId] = useState(product.product_id || '');
+  const [categoryId, setCategoryId] = useState(product.category_id || '');
+  const [quantity, setQuantity] = useState<number | string>(product.quantity ?? 0);
+  const [sellingPrice, setSellingPrice] = useState<number | string>(product.selling_price ?? 0);
+  const [mrp, setMrp] = useState<number | string>(product.mrp ?? 0);
+  const [lowStock, setLowStock] = useState<number | string>(product.low_stock ?? 10);
+  const [unit, setUnit] = useState(product.unit || 'Piece');
+  const [status, setStatus] = useState<ProductStatus>(product.status || 'active');
+
+  const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [loadingCategories, setLoadingCategories] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadCategories() {
+      try {
+        const res = await fetchCategoriesForDropdown();
+        if (active && res.data) {
+          setCategories(res.data);
+        }
+      } catch (err) {
+        console.error('Error fetching categories in open product:', err);
+      } finally {
+        if (active) setLoadingCategories(false);
+      }
+    }
+
+    loadCategories();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const formatDate = (isoString?: string) => {
     if (!isoString) return '—';
@@ -70,307 +123,439 @@ function OpenDistributorModalContent({
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!distributorId.trim()) {
-      setError('Distributor ID is required.');
+
+    if (!name.trim()) {
+      setError('Product Name is required.');
       return;
     }
-    if (!distributorName.trim()) {
-      setError('Distributor Name is required.');
+    if (!productId.trim()) {
+      setError('Product Code is required.');
+      return;
+    }
+    if (!categoryId) {
+      setError('Please select a Category.');
       return;
     }
 
-    setLoading(true);
+    const qtyNum = Number(quantity);
+    const spNum = Number(sellingPrice);
+    const mrpNum = Number(mrp);
+    const lowStockNum = Number(lowStock);
+
+    if (isNaN(qtyNum) || qtyNum < 0) {
+      setError('Quantity must be 0 or a positive number.');
+      return;
+    }
+    if (isNaN(spNum) || spNum < 0) {
+      setError('Selling Price must be 0 or a positive amount.');
+      return;
+    }
+    if (isNaN(mrpNum) || mrpNum < 0) {
+      setError('MRP must be 0 or a positive amount.');
+      return;
+    }
+    if (isNaN(lowStockNum) || lowStockNum < 0) {
+      setError('Low Stock threshold must be 0 or a positive number.');
+      return;
+    }
+
+    setSaving(true);
     setError(null);
 
-    const res = await updateDistributor({
-      id: distributor.id,
-      distributor_id: distributorId.trim(),
-      distributor_name: distributorName.trim(),
-      address: address.trim() || undefined,
-      mobile: mobile.trim() || undefined,
-      gstin: gstin.trim() || undefined,
+    const res = await updateProduct({
+      id: product.id,
+      name: name.trim(),
+      product_id: productId.trim(),
+      category_id: categoryId,
+      quantity: qtyNum,
+      selling_price: spNum,
+      mrp: mrpNum,
+      low_stock: lowStockNum,
+      unit: unit.trim() || 'Piece',
       status,
     });
 
-    setLoading(false);
+    setSaving(false);
 
     if (res.error) {
       setError(res.error);
     } else if (res.data) {
-      onSuccess({
-        ...res.data,
-        total_purchases: distributor.total_purchases,
-      });
+      onSuccess(res.data);
       onClose();
     }
   };
 
   const handleDelete = async () => {
-    if (distributor.total_purchases && distributor.total_purchases > 0) {
-      setError(`Cannot delete distributor with ${distributor.total_purchases} purchase bill(s) recorded.`);
-      return;
-    }
-
-    if (!confirm(`Are you sure you want to delete distributor "${distributor.distributor_name}" (${distributor.distributor_id})?`)) {
+    if (!confirmDelete) {
+      setConfirmDelete(true);
       return;
     }
 
     setDeleting(true);
     setError(null);
 
-    const res = await deleteDistributor(distributor.id);
+    const res = await deleteProduct(product.id);
     setDeleting(false);
 
     if (res.error) {
       setError(res.error);
+      setConfirmDelete(false);
     } else {
-      if (onDeleteSuccess) onDeleteSuccess(distributor.id);
+      if (onDeleteSuccess) {
+        onDeleteSuccess(product.id);
+      }
       onClose();
     }
   };
 
+  const isLowStock = Number(quantity) < Number(lowStock);
+
   return (
     <div
-      id="open-distributor-backdrop"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto"
+      id="open-product-modal-backdrop"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs erp-fade-in overflow-y-auto"
       onClick={(e) => {
-        if (e.target === e.currentTarget && !loading && !deleting) onClose();
+        if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
-        id="open-distributor-modal"
-        className="w-full max-w-xl bg-[var(--surface)] rounded-xl shadow-2xl border border-[var(--border)] overflow-hidden erp-slide-up"
-        onClick={(e) => e.stopPropagation()}
+        id="open-product-modal-card"
+        className="w-full max-w-2xl bg-[var(--surface)] rounded-xl border border-[var(--border)] shadow-xl overflow-hidden erp-slide-up my-8 max-h-[90vh] flex flex-col"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)] bg-[var(--surface-subtle)]">
+        {/* Modal Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)] bg-[var(--surface-subtle)]/40 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-[var(--primary-light)] text-[var(--primary)] flex items-center justify-center">
-              <Truck className="w-4 h-4" />
+            <div className="p-2 rounded-lg bg-[var(--primary-light)] text-[var(--primary)]">
+              <Package className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-semibold text-[var(--text-primary)]">
-                  Edit Distributor
+                <h2 className="text-base sm:text-lg font-bold text-[var(--text-primary)]">
+                  Edit Product
                 </h2>
-                <span className="font-mono text-xs px-2 py-0.5 rounded bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] font-semibold">
-                  {distributor.distributor_id}
+                <span className="erp-badge font-mono text-[11px] bg-[var(--surface-subtle)] text-[var(--text-secondary)] border border-[var(--border)]">
+                  {product.product_id}
                 </span>
+                {status === 'active' ? (
+                  <span className="erp-badge erp-badge-success text-[10px]">Active</span>
+                ) : (
+                  <span className="erp-badge erp-badge-secondary text-[10px]">Inactive</span>
+                )}
               </div>
               <p className="text-xs text-[var(--text-secondary)]">
-                Update vendor details, contact info, and tax identification
+                Update product parameters, inventory counts, and pricing
               </p>
             </div>
           </div>
           <button
+            id="close-open-product-modal-btn"
             type="button"
             onClick={onClose}
-            disabled={loading || deleting}
-            className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface)] transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] transition-colors cursor-pointer"
             aria-label="Close"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Quick Context Summary Banner */}
-        <div className="px-6 py-2.5 bg-[var(--surface-subtle)]/60 border-b border-[var(--border)] flex items-center justify-between text-xs text-[var(--text-secondary)]">
-          <div className="flex items-center gap-1.5">
-            <ShoppingBag className="w-3.5 h-3.5 text-[var(--primary)]" />
-            <span>Purchases recorded:</span>
-            <strong className="text-[var(--text-primary)] font-semibold">
-              {distributor.total_purchases || 0} bill{distributor.total_purchases === 1 ? '' : 's'}
-            </strong>
+        {/* Low Stock Banner inside Modal */}
+        {isLowStock && (
+          <div className="px-6 py-2.5 bg-[var(--danger-light)] border-b border-[var(--danger)] text-xs text-[var(--danger)] flex items-center justify-between">
+            <div className="flex items-center gap-2 font-medium">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>
+                Low Stock Alert: Current stock ({quantity} {unit}) is below the threshold ({lowStock} {unit}).
+              </span>
+            </div>
           </div>
-          <div className="flex items-center gap-1.5">
-            <Calendar className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-            <span>Registered:</span>
-            <span>{formatDate(distributor.created_at)}</span>
-          </div>
-        </div>
+        )}
 
         {/* Form Body */}
-        <form onSubmit={handleUpdate} className="p-6 space-y-4">
+        <form onSubmit={handleUpdate} className="flex-1 overflow-y-auto p-6 space-y-5">
           {error && (
-            <div className="flex items-start gap-2.5 p-3 text-xs bg-[var(--danger-light)] text-[var(--danger)] border border-[var(--danger)]/20 rounded-lg">
+            <div
+              id="open-product-error-banner"
+              className="p-3.5 rounded-lg bg-[var(--danger-light)] border border-[var(--danger)] text-xs text-[var(--danger)] flex items-start gap-2 erp-shake"
+            >
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
           )}
 
-          {/* Row 1: ID & Name */}
+          {/* Form Fields Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            
+            {/* Product ID / Code */}
             <div className="erp-form-group">
-              <label className="erp-label" htmlFor="edit-distri-id">
-                Distributor ID <span className="text-[var(--danger)]">*</span>
+              <label htmlFor="edit-product-id" className="erp-label flex items-center justify-between">
+                <span>Product Code / SKU <span className="text-[var(--danger)]">*</span></span>
+                <span className="text-[10px] text-[var(--text-muted)] font-normal">Unique ID</span>
               </label>
               <input
-                id="edit-distri-id"
+                id="edit-product-id"
                 type="text"
+                value={productId}
+                onChange={(e) => setProductId(e.target.value.toUpperCase())}
+                className="erp-input uppercase font-mono text-xs font-semibold"
                 required
-                value={distributorId}
-                onChange={(e) => setDistributorId(e.target.value)}
-                placeholder="e.g. distri-101"
-                className="erp-input font-mono"
               />
             </div>
 
+            {/* Category Selection */}
             <div className="erp-form-group">
-              <label className="erp-label" htmlFor="edit-distri-name">
-                Distributor Name <span className="text-[var(--danger)]">*</span>
+              <label htmlFor="edit-product-category" className="erp-label">
+                Category <span className="text-[var(--danger)]">*</span>
               </label>
-              <input
-                id="edit-distri-name"
-                type="text"
+              <select
+                id="edit-product-category"
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+                className="erp-select text-xs"
+                disabled={loadingCategories || categories.length === 0}
                 required
-                value={distributorName}
-                onChange={(e) => setDistributorName(e.target.value)}
-                placeholder="e.g. Raju Dry Fruits"
-                className="erp-input"
-              />
+              >
+                {loadingCategories ? (
+                  <option value="">Loading categories...</option>
+                ) : (
+                  categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.category_name} ({c.category_id})
+                    </option>
+                  ))
+                )}
+              </select>
             </div>
-          </div>
 
-          {/* Row 2: Location / Address & Mobile */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="erp-form-group">
-              <label className="erp-label flex items-center gap-1.5" htmlFor="edit-distri-address">
-                <MapPin className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-                <span>Location / City</span>
+            {/* Product Name (Full Width) */}
+            <div className="erp-form-group sm:col-span-2">
+              <label htmlFor="edit-product-name" className="erp-label">
+                Product Name <span className="text-[var(--danger)]">*</span>
               </label>
               <input
-                id="edit-distri-address"
+                id="edit-product-name"
                 type="text"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="e.g. Hyderabad, Mumbai"
-                className="erp-input"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="erp-input text-xs"
+                required
               />
             </div>
 
+            {/* Quantity */}
             <div className="erp-form-group">
-              <label className="erp-label flex items-center gap-1.5" htmlFor="edit-distri-mobile">
-                <Phone className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-                <span>Contact / Mobile</span>
+              <label htmlFor="edit-product-quantity" className="erp-label flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                <span>Quantity <span className="text-[var(--danger)]">*</span></span>
               </label>
               <input
-                id="edit-distri-mobile"
-                type="tel"
-                value={mobile}
-                onChange={(e) => setMobile(e.target.value)}
-                placeholder="e.g. 9876543210"
-                className="erp-input"
-              />
-            </div>
-          </div>
-
-          {/* Row 3: GSTIN & Status */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="erp-form-group">
-              <label className="erp-label flex items-center gap-1.5" htmlFor="edit-distri-gstin">
-                <Building2 className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-                <span>GSTIN</span>
-              </label>
-              <input
-                id="edit-distri-gstin"
-                type="text"
-                value={gstin}
-                onChange={(e) => setGstin(e.target.value.toUpperCase())}
-                placeholder="e.g. 36AAAAA0000A1Z5"
-                className="erp-input uppercase font-mono text-xs"
+                id="edit-product-quantity"
+                type="number"
+                step="any"
+                min="0"
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+                className={`erp-input text-xs font-mono font-bold ${
+                  isLowStock ? 'border-[var(--danger)] bg-[var(--danger-light)] text-[var(--danger)]' : ''
+                }`}
+                required
               />
             </div>
 
+            {/* Measurement Unit */}
             <div className="erp-form-group">
-              <label className="erp-label">
-                Status <span className="text-[var(--danger)]">*</span>
+              <label htmlFor="edit-product-unit" className="erp-label">
+                Measurement Unit <span className="text-[var(--danger)]">*</span>
               </label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setStatus('active')}
-                  className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border text-xs font-medium cursor-pointer transition-all ${
-                    status === 'active'
-                      ? 'border-[var(--success)] bg-[var(--success-light)] text-[var(--success)] shadow-xs'
-                      : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)]'
-                  }`}
+              <div className="flex gap-2">
+                <input
+                  id="edit-product-unit"
+                  type="text"
+                  value={unit}
+                  onChange={(e) => setUnit(e.target.value)}
+                  className="erp-input text-xs flex-1"
+                  required
+                />
+                <select
+                  value={unit}
+                  onChange={(e) => setUnit(e.target.value)}
+                  className="erp-select text-xs w-28 bg-[var(--surface-subtle)]"
+                  title="Preset Units"
                 >
-                  <span className="w-2 h-2 rounded-full bg-[var(--success)]" />
-                  Active
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStatus('inactive')}
-                  className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border text-xs font-medium cursor-pointer transition-all ${
-                    status === 'inactive'
-                      ? 'border-[var(--secondary)] bg-[var(--surface-subtle)] text-[var(--text-primary)] font-semibold shadow-xs'
-                      : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)]'
-                  }`}
-                >
-                  <span className="w-2 h-2 rounded-full bg-[var(--text-muted)]" />
-                  Inactive
-                </button>
+                  {COMMON_UNITS.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
+
+            {/* Selling Price */}
+            <div className="erp-form-group">
+              <label htmlFor="edit-product-selling-price" className="erp-label flex items-center gap-1.5">
+                <IndianRupee className="w-3.5 h-3.5 text-[var(--success)]" />
+                <span>Selling Price (₹) <span className="text-[var(--danger)]">*</span></span>
+              </label>
+              <input
+                id="edit-product-selling-price"
+                type="number"
+                step="0.01"
+                min="0"
+                value={sellingPrice}
+                onChange={(e) => setSellingPrice(e.target.value)}
+                className="erp-input text-xs font-mono font-semibold"
+                required
+              />
+            </div>
+
+            {/* MRP */}
+            <div className="erp-form-group">
+              <label htmlFor="edit-product-mrp" className="erp-label flex items-center gap-1.5">
+                <Tag className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                <span>MRP / Retail Price (₹) <span className="text-[var(--danger)]">*</span></span>
+              </label>
+              <input
+                id="edit-product-mrp"
+                type="number"
+                step="0.01"
+                min="0"
+                value={mrp}
+                onChange={(e) => setMrp(e.target.value)}
+                className="erp-input text-xs font-mono"
+                required
+              />
+            </div>
+
+            {/* Low Stock Threshold */}
+            <div className="erp-form-group">
+              <label htmlFor="edit-product-low-stock" className="erp-label flex items-center gap-1.5">
+                <ShieldAlert className="w-3.5 h-3.5 text-[var(--warning)]" />
+                <span>Low Stock Threshold <span className="text-[var(--danger)]">*</span></span>
+              </label>
+              <input
+                id="edit-product-low-stock"
+                type="number"
+                step="any"
+                min="0"
+                value={lowStock}
+                onChange={(e) => setLowStock(e.target.value)}
+                className="erp-input text-xs font-mono"
+                required
+              />
+            </div>
+
+            {/* Status */}
+            <div className="erp-form-group">
+              <label htmlFor="edit-product-status" className="erp-label">
+                Status <span className="text-[var(--danger)]">*</span>
+              </label>
+              <select
+                id="edit-product-status"
+                value={status}
+                onChange={(e) => setStatus(e.target.value as ProductStatus)}
+                className="erp-select text-xs"
+              >
+                <option value="active">Active (Available for billing)</option>
+                <option value="inactive">Inactive (Discontinued)</option>
+              </select>
+            </div>
+
           </div>
 
-          {/* Footer */}
-          <div className="pt-4 border-t border-[var(--border)] space-y-3">
-            <div className="flex items-center justify-between">
-              {/* Delete Button */}
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={loading || deleting || (distributor.total_purchases ? distributor.total_purchases > 0 : false)}
-                title={
-                  distributor.total_purchases && distributor.total_purchases > 0
-                    ? 'Cannot delete distributor with recorded purchase bills'
-                    : 'Delete this distributor'
-                }
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[var(--danger)] hover:bg-[var(--danger-light)] transition-colors disabled:opacity-40 disabled:hover:bg-transparent cursor-pointer"
-              >
-                {deleting ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Trash2 className="w-3.5 h-3.5" />
-                )}
-                <span>Delete</span>
-              </button>
+          {/* Timestamps & Info Summary Box */}
+          <div className="p-3.5 rounded-lg bg-[var(--surface-subtle)] border border-[var(--border)] text-xs grid grid-cols-1 sm:grid-cols-2 gap-2 text-[var(--text-secondary)]">
+            <div className="flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
+              <span>
+                Created: <strong className="text-[var(--text-primary)]">{formatDate(product.created_at)}</strong>
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
+              <span>
+                Last Updated: <strong className="text-[var(--text-primary)]">{formatDate(product.updated_at)}</strong>
+              </span>
+            </div>
+          </div>
 
-              <div className="flex items-center gap-2">
+          {/* Bottom Action Controls & Small Last Updated Display */}
+          <div className="pt-4 border-t border-[var(--border)] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            
+            {/* Delete / Danger Option */}
+            <div className="flex items-center">
+              {confirmDelete ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-[var(--danger)] font-medium">Are you sure?</span>
+                  <button
+                    id="confirm-delete-product-btn"
+                    type="button"
+                    onClick={handleDelete}
+                    disabled={deleting}
+                    className="erp-btn erp-btn-danger text-xs py-1 px-2.5 cursor-pointer"
+                  >
+                    {deleting ? 'Deleting...' : 'Yes, Delete'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(false)}
+                    className="erp-btn erp-btn-ghost text-xs py-1 px-2 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
                 <button
+                  id="delete-product-btn"
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  disabled={saving || deleting}
+                  className="inline-flex items-center gap-1.5 text-xs text-[var(--danger)] hover:bg-[var(--danger-light)] py-1.5 px-2.5 rounded-md border border-transparent hover:border-[var(--danger)] transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Product</span>
+                </button>
+              )}
+            </div>
+
+            {/* Right Buttons with small last updated text at bottom */}
+            <div className="flex flex-col items-end gap-1">
+              <div className="flex items-center gap-2.5">
+                <button
+                  id="cancel-edit-product-btn"
                   type="button"
                   onClick={onClose}
-                  disabled={loading || deleting}
-                  className="erp-btn erp-btn-outline cursor-pointer"
+                  disabled={saving || deleting}
+                  className="erp-btn erp-btn-outline text-xs cursor-pointer"
                 >
-                  Cancel
+                  Close
                 </button>
                 <button
+                  id="save-edit-product-btn"
                   type="submit"
-                  disabled={loading || deleting}
-                  className="erp-btn erp-btn-primary flex items-center gap-2 cursor-pointer"
+                  disabled={saving || deleting || loadingCategories}
+                  className="erp-btn erp-btn-primary flex items-center gap-2 text-xs font-semibold cursor-pointer shadow-xs"
                 >
-                  {loading ? (
+                  {saving ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Updating...
+                      <span>Saving Changes...</span>
                     </>
                   ) : (
                     <>
                       <CheckCircle2 className="w-4 h-4" />
-                      Update Distributor
+                      <span>Save Changes</span>
                     </>
                   )}
                 </button>
               </div>
+
+              {/* Last Updated small text at bottom */}
+              <span className="text-[10px] text-[var(--text-muted)] flex items-center gap-1 pr-0.5">
+                <Clock className="w-3 h-3 text-[var(--text-muted)]" />
+                Last updated: {formatDate(product.updated_at)}
+              </span>
             </div>
 
-            {/* Last updated timestamp */}
-            <div className="flex items-center justify-center gap-1.5 text-[11px] text-[var(--text-muted)] pt-1">
-              <Clock className="w-3 h-3" />
-              <span>Last updated: {formatDate(distributor.updated_at || distributor.created_at)}</span>
-            </div>
           </div>
         </form>
       </div>
