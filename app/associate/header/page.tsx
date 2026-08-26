@@ -35,7 +35,7 @@ export default function AssociateHeader(props: any) {
         )}
         <Image
           id="associate-header-logo"
-          src="/logo.svg"
+          src="/lse_logo.png"
           alt="Lakshmi Satyanarayana Enterprises Logo"
           width={32}
           height={32}
