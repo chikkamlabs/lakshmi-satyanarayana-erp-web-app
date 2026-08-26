@@ -214,6 +214,40 @@ export async function fetchAssociateById(id: string): Promise<{ data: AssociateR
 }
 
 /**
+ * Generate a suggested next associate_id (e.g. asc-101, asc-102)
+ */
+export async function suggestNextAssociateId(): Promise<string> {
+  try {
+    if (!isSupabaseConfigured) {
+      return 'asc-101';
+    }
+
+    const { data } = await supabase
+      .from('associates')
+      .select('associate_id');
+
+    if (!data || data.length === 0) {
+      return 'asc-101';
+    }
+
+    let maxNum = 100;
+    data.forEach((a) => {
+      const match = a.associate_id?.match(/asc-(\d+)/i);
+      if (match && match[1]) {
+        const n = parseInt(match[1], 10);
+        if (!isNaN(n) && n > maxNum) {
+          maxNum = n;
+        }
+      }
+    });
+
+    return `asc-${maxNum + 1}`;
+  } catch {
+    return 'asc-101';
+  }
+}
+
+/**
  * Create a new Associate:
  * 1. Creates Supabase Auth User (using isolated client to preserve Admin session)
  * 2. Inserts into public.profiles
@@ -225,8 +259,10 @@ export async function createAssociate(input: CreateAssociateInput): Promise<{ da
       return { data: null, error: 'Supabase is not configured. Please check environment variables.' };
     }
 
+    const finalAssociateId = (input.associate_id || '').trim() || (await suggestNextAssociateId());
+
     // Basic Validation
-    if (!input.email || !input.password || !input.name || !input.mobile || !input.associate_id) {
+    if (!input.email || !input.password || !input.name || !input.mobile || !finalAssociateId) {
       return { data: null, error: 'All fields (Name, Email, Mobile, Associate ID, Password) are required.' };
     }
 
@@ -238,11 +274,11 @@ export async function createAssociate(input: CreateAssociateInput): Promise<{ da
     const { data: existingAssoc } = await supabase
       .from('associates')
       .select('id')
-      .eq('associate_id', input.associate_id.trim())
+      .eq('associate_id', finalAssociateId)
       .maybeSingle();
 
     if (existingAssoc) {
-      return { data: null, error: `Associate ID "${input.associate_id}" is already in use. Please choose another.` };
+      return { data: null, error: `Associate ID "${finalAssociateId}" is already in use. Please choose another.` };
     }
 
     // Check if mobile is already taken in profiles
@@ -270,7 +306,7 @@ export async function createAssociate(input: CreateAssociateInput): Promise<{ da
           name: input.name.trim(),
           mobile: input.mobile.trim(),
           role: 'associate',
-          associate_id: input.associate_id.trim(),
+          associate_id: finalAssociateId,
         },
       },
     });
@@ -310,7 +346,7 @@ export async function createAssociate(input: CreateAssociateInput): Promise<{ da
       .from('associates')
       .upsert({
         id: newUserId,
-        associate_id: input.associate_id.trim(),
+        associate_id: finalAssociateId,
         current_points: initialPoints,
       })
       .select('*')

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import AdminHeader from '../../header/page';
 import AdminSidebar from '../../sidebar/page';
-import { createAssociate, CreateAssociateInput } from '@/lib/adminassociateStore';
+import { createAssociate, suggestNextAssociateId, CreateAssociateInput } from '@/lib/adminassociateStore';
 
 export default function AddAssociatePage() {
   const router = useRouter();
@@ -40,6 +40,15 @@ export default function AddAssociatePage() {
     current_points: 0,
     status: 'active',
   });
+
+  useEffect(() => {
+    suggestNextAssociateId().then((nextId) => {
+      setFormData((prev) => ({
+        ...prev,
+        associate_id: prev.associate_id || nextId,
+      }));
+    });
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;

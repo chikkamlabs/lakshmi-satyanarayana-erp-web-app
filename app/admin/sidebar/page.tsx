@@ -9,7 +9,10 @@ import {
   Package,
   Users,
   UserCheck,
+  Tag,
+  Truck,
   Gift,
+  Wallet,
   X,
 } from 'lucide-react';
 
@@ -20,10 +23,13 @@ export default function AdminSidebar(props: any) {
 
   const adminNavItems = [
     { name: 'Home', href: '/admin/dashboard', icon: Home },
-    { name: 'Bills', href: '/admin/bills', icon: Receipt },
-    { name: 'Products', href: '/admin/products', icon: Package },
+    { name: 'Bills', href: '/admin/bills/dashboard', icon: Receipt },
+    { name: 'Payments', href: '/admin/payments/dashboard', icon: Wallet },
+    { name: 'Products', href: '/admin/products/dashboard', icon: Package },
+    { name: 'Categories', href: '/admin/categories/dashboard', icon: Tag },
+    { name: 'Distributors', href: '/admin/distributors/dashboard', icon: Truck },
     { name: 'Associates', href: '/admin/associates/dashboard', icon: Users },
-    { name: 'Customers', href: '/admin/customers', icon: UserCheck },
+    { name: 'Customers', href: '/admin/customers/dashboard', icon: UserCheck },
     { name: 'Rewards', href: '/admin/rewards/dashboard', icon: Gift },
   ];
 
@@ -79,8 +85,14 @@ export default function AdminSidebar(props: any) {
             const isActive =
               pathname === item.href ||
               (item.href === '/admin/dashboard' && pathname === '/admin') ||
+              (item.href.includes('/products') && pathname?.startsWith('/admin/products')) ||
+              (item.href.includes('/categories') && pathname?.startsWith('/admin/categories')) ||
+              (item.href.includes('/distributors') && pathname?.startsWith('/admin/distributors')) ||
               (item.href.includes('/associates') && pathname?.startsWith('/admin/associates')) ||
-              (item.href.includes('/rewards') && pathname?.startsWith('/admin/rewards'));
+              (item.href.includes('/customers') && pathname?.startsWith('/admin/customers')) ||
+              (item.href.includes('/rewards') && pathname?.startsWith('/admin/rewards')) ||
+              (item.href.includes('/payments') && pathname?.startsWith('/admin/payments')) ||
+              (item.href.includes('/bills') && (pathname?.startsWith('/admin/bills') || pathname?.startsWith('/admin/createbill')));
 
             return (
               <Link

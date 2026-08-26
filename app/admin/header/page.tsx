@@ -35,7 +35,7 @@ export default function AdminHeader(props: any) {
         )}
         <Image
           id="admin-header-logo"
-          src="/logo.svg"
+          src="/lse_logo.png"
           alt="Lakshmi Satyanarayana Enterprises Logo"
           width={32}
           height={32}

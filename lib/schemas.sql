@@ -87,6 +87,12 @@ EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
 
+DO $$ BEGIN
+    CREATE TYPE customer_transaction_calc AS ENUM ('sum', 'subtract');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
 -- ==============================================================================
 -- PART 2: HELPER FUNCTIONS (TIMESTAMPS & SECURITY DEFINER FOR RLS)
 -- ==============================================================================
@@ -167,6 +173,7 @@ CREATE TABLE IF NOT EXISTS public.customers (
     mobile VARCHAR(15) UNIQUE NOT NULL,
     status customer_status NOT NULL DEFAULT 'active',
     available_points DECIMAL(12,2) NOT NULL DEFAULT 0.00 CHECK (available_points >= 0),
+    credit DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     address TEXT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -313,6 +320,28 @@ CREATE TABLE IF NOT EXISTS public.purchase_items (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- 15. CUSTOMER_TRANSACTIONS
+CREATE TABLE IF NOT EXISTS public.customer_transactions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id UUID NOT NULL REFERENCES public.customers(id) ON DELETE RESTRICT,
+    bill_id UUID NULL REFERENCES public.bills(id) ON DELETE SET NULL,
+    calculation customer_transaction_calc NOT NULL,
+    amount DECIMAL(12,2) NOT NULL CHECK (amount >= 0),
+    notes TEXT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 16. EXPENSES
+CREATE TABLE IF NOT EXISTS public.expenses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    amount DECIMAL(12,2) NOT NULL CHECK (amount >= 0),
+    type payment_type NOT NULL DEFAULT 'cash',
+    notes TEXT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- ==============================================================================
 -- PART 4: INDEXES
 -- ==============================================================================
@@ -323,6 +352,10 @@ CREATE INDEX IF NOT EXISTS idx_profiles_email ON public.profiles(email);
 CREATE INDEX IF NOT EXISTS idx_associates_associate_id ON public.associates(associate_id);
 
 CREATE INDEX IF NOT EXISTS idx_customers_mobile ON public.customers(mobile);
+
+CREATE INDEX IF NOT EXISTS idx_customer_transactions_customer_id ON public.customer_transactions(customer_id);
+CREATE INDEX IF NOT EXISTS idx_customer_transactions_bill_id ON public.customer_transactions(bill_id);
+CREATE INDEX IF NOT EXISTS idx_customer_transactions_created_at ON public.customer_transactions(created_at);
 
 CREATE INDEX IF NOT EXISTS idx_rewards_status ON public.rewards(status);
 
@@ -357,6 +390,9 @@ CREATE INDEX IF NOT EXISTS idx_purchases_created_at ON public.purchases(created_
 
 CREATE INDEX IF NOT EXISTS idx_purchase_items_purchase_id ON public.purchase_items(purchase_id);
 CREATE INDEX IF NOT EXISTS idx_purchase_items_product_id ON public.purchase_items(product_id);
+
+CREATE INDEX IF NOT EXISTS idx_expenses_created_at ON public.expenses(created_at);
+CREATE INDEX IF NOT EXISTS idx_expenses_type ON public.expenses(type);
 
 -- ==============================================================================
 -- PART 5: TRIGGERS (UPDATED_AT)
@@ -399,6 +435,12 @@ CREATE TRIGGER trigger_purchases_updated_at BEFORE UPDATE ON public.purchases FO
 
 DROP TRIGGER IF EXISTS trigger_purchase_items_updated_at ON public.purchase_items;
 CREATE TRIGGER trigger_purchase_items_updated_at BEFORE UPDATE ON public.purchase_items FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trigger_customer_transactions_updated_at ON public.customer_transactions;
+CREATE TRIGGER trigger_customer_transactions_updated_at BEFORE UPDATE ON public.customer_transactions FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trigger_expenses_updated_at ON public.expenses;
+CREATE TRIGGER trigger_expenses_updated_at BEFORE UPDATE ON public.expenses FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- ==============================================================================
 -- PART 6: ATOMIC POINTS & REWARD SECURITY DEFINER FUNCTIONS
@@ -607,6 +649,7 @@ ALTER TABLE public.payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.distributors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.purchases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.purchase_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.customer_transactions ENABLE ROW LEVEL SECURITY;
 
 -- ==============================================================================
 -- PART 8: ROW LEVEL SECURITY (RLS) POLICIES
@@ -924,7 +967,73 @@ CREATE POLICY "purchase_items_staff_select"
     USING (is_gst());
 
 -- ------------------------------------------------------------------------------
--- 15. STORAGE POLICIES (rewards_media bucket)
+-- 15. CUSTOMER_TRANSACTIONS POLICIES
+-- ------------------------------------------------------------------------------
+DROP POLICY IF EXISTS "customer_transactions_admin_all" ON public.customer_transactions;
+CREATE POLICY "customer_transactions_admin_all"
+    ON public.customer_transactions
+    FOR ALL
+    TO authenticated
+    USING (is_admin())
+    WITH CHECK (is_admin());
+
+DROP POLICY IF EXISTS "customer_transactions_staff_select" ON public.customer_transactions;
+CREATE POLICY "customer_transactions_staff_select"
+    ON public.customer_transactions
+    FOR SELECT
+    TO authenticated
+    USING (is_associate() OR is_gst());
+
+DROP POLICY IF EXISTS "customer_transactions_staff_insert" ON public.customer_transactions;
+CREATE POLICY "customer_transactions_staff_insert"
+    ON public.customer_transactions
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (is_associate() OR is_gst());
+
+DROP POLICY IF EXISTS "customer_transactions_staff_update" ON public.customer_transactions;
+CREATE POLICY "customer_transactions_staff_update"
+    ON public.customer_transactions
+    FOR UPDATE
+    TO authenticated
+    USING (is_associate() OR is_gst())
+    WITH CHECK (is_associate() OR is_gst());
+
+-- ------------------------------------------------------------------------------
+-- 16. EXPENSES POLICIES
+-- ------------------------------------------------------------------------------
+DROP POLICY IF EXISTS "expenses_admin_all" ON public.expenses;
+CREATE POLICY "expenses_admin_all"
+    ON public.expenses
+    FOR ALL
+    TO authenticated
+    USING (is_admin())
+    WITH CHECK (is_admin());
+
+DROP POLICY IF EXISTS "expenses_staff_select" ON public.expenses;
+CREATE POLICY "expenses_staff_select"
+    ON public.expenses
+    FOR SELECT
+    TO authenticated
+    USING (is_associate() OR is_gst());
+
+DROP POLICY IF EXISTS "expenses_staff_insert" ON public.expenses;
+CREATE POLICY "expenses_staff_insert"
+    ON public.expenses
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (is_associate() OR is_gst());
+
+DROP POLICY IF EXISTS "expenses_staff_update" ON public.expenses;
+CREATE POLICY "expenses_staff_update"
+    ON public.expenses
+    FOR UPDATE
+    TO authenticated
+    USING (is_admin() OR is_associate() OR is_gst())
+    WITH CHECK (is_admin() OR is_associate() OR is_gst());
+
+-- ------------------------------------------------------------------------------
+-- 16. STORAGE POLICIES (rewards_media bucket)
 -- ------------------------------------------------------------------------------
 DROP POLICY IF EXISTS "Admins can upload reward media" ON storage.objects;
 CREATE POLICY "Admins can upload reward media"
