@@ -8,6 +8,7 @@ export interface Product {
   product_id: string;
   category_id: string;
   quantity: number;
+  discount?: number;
   selling_price: number;
   mrp: number;
   low_stock: number;
@@ -34,6 +35,7 @@ export interface CreateProductInput {
   product_id: string;
   category_id: string;
   quantity: number;
+  discount?: number;
   selling_price: number;
   mrp: number;
   low_stock: number;
@@ -47,6 +49,7 @@ export interface UpdateProductInput {
   product_id: string;
   category_id: string;
   quantity: number;
+  discount?: number;
   selling_price: number;
   mrp: number;
   low_stock: number;
@@ -69,7 +72,8 @@ const FALLBACK_PRODUCTS: Product[] = [
     name: 'W180 Jumbo Raw Cashew Nuts 500g',
     category_id: '11111111-2222-3333-4444-555555555551',
     quantity: 45,
-    selling_price: 520,
+    discount: 10,
+    selling_price: 540,
     mrp: 600,
     low_stock: 10,
     unit: 'Packet',
@@ -88,7 +92,8 @@ const FALLBACK_PRODUCTS: Product[] = [
     name: 'W240 Whole Cashews 1kg Tin',
     category_id: '11111111-2222-3333-4444-555555555551',
     quantity: 4,
-    selling_price: 950,
+    discount: 10,
+    selling_price: 990,
     mrp: 1100,
     low_stock: 10,
     unit: 'Tin',
@@ -107,7 +112,8 @@ const FALLBACK_PRODUCTS: Product[] = [
     name: 'California Premium Roasted Almonds 500g',
     category_id: '11111111-2222-3333-4444-555555555552',
     quantity: 80,
-    selling_price: 480,
+    discount: 10,
+    selling_price: 495,
     mrp: 550,
     low_stock: 15,
     unit: 'Packet',
@@ -228,6 +234,7 @@ export async function fetchProducts(
         product_id,
         category_id,
         quantity,
+        discount,
         selling_price,
         mrp,
         low_stock,
@@ -263,6 +270,7 @@ export async function fetchProducts(
       product_id: row.product_id,
       category_id: row.category_id,
       quantity: Number(row.quantity ?? 0),
+      discount: Number(row.discount ?? 0),
       selling_price: Number(row.selling_price ?? 0),
       mrp: Number(row.mrp ?? 0),
       low_stock: Number(row.low_stock ?? 0),
@@ -382,6 +390,7 @@ export async function fetchProductById(
         product_id,
         category_id,
         quantity,
+        discount,
         selling_price,
         mrp,
         low_stock,
@@ -411,6 +420,7 @@ export async function fetchProductById(
       product_id: data.product_id,
       category_id: data.category_id,
       quantity: Number(data.quantity ?? 0),
+      discount: Number(data.discount ?? 0),
       selling_price: Number(data.selling_price ?? 0),
       mrp: Number(data.mrp ?? 0),
       low_stock: Number(data.low_stock ?? 0),
@@ -499,6 +509,7 @@ export async function createProduct(
         product_id: cleanProductId,
         category_id: input.category_id,
         quantity: Number(input.quantity || 0),
+        discount: Number(input.discount || 0),
         selling_price: Number(input.selling_price || 0),
         mrp: Number(input.mrp || 0),
         low_stock: Number(input.low_stock || 0),
@@ -533,6 +544,7 @@ export async function createProduct(
         product_id: cleanProductId,
         category_id: input.category_id,
         quantity: Number(input.quantity || 0),
+        discount: Number(input.discount || 0),
         selling_price: Number(input.selling_price || 0),
         mrp: Number(input.mrp || 0),
         low_stock: Number(input.low_stock || 0),
@@ -547,6 +559,7 @@ export async function createProduct(
         product_id,
         category_id,
         quantity,
+        discount,
         selling_price,
         mrp,
         low_stock,
@@ -573,6 +586,7 @@ export async function createProduct(
       product_id: data.product_id,
       category_id: data.category_id,
       quantity: Number(data.quantity ?? 0),
+      discount: Number(data.discount ?? 0),
       selling_price: Number(data.selling_price ?? 0),
       mrp: Number(data.mrp ?? 0),
       low_stock: Number(data.low_stock ?? 0),
@@ -634,6 +648,7 @@ export async function updateProduct(
           product_id: cleanProductId,
           category_id: input.category_id,
           quantity: Number(input.quantity || 0),
+          discount: Number(input.discount || 0),
           selling_price: Number(input.selling_price || 0),
           mrp: Number(input.mrp || 0),
           low_stock: Number(input.low_stock || 0),
@@ -669,6 +684,7 @@ export async function updateProduct(
         product_id: cleanProductId,
         category_id: input.category_id,
         quantity: Number(input.quantity || 0),
+        discount: Number(input.discount || 0),
         selling_price: Number(input.selling_price || 0),
         mrp: Number(input.mrp || 0),
         low_stock: Number(input.low_stock || 0),
@@ -683,6 +699,7 @@ export async function updateProduct(
         product_id,
         category_id,
         quantity,
+        discount,
         selling_price,
         mrp,
         low_stock,
@@ -709,6 +726,7 @@ export async function updateProduct(
       product_id: data.product_id,
       category_id: data.category_id,
       quantity: Number(data.quantity ?? 0),
+      discount: Number(data.discount ?? 0),
       selling_price: Number(data.selling_price ?? 0),
       mrp: Number(data.mrp ?? 0),
       low_stock: Number(data.low_stock ?? 0),

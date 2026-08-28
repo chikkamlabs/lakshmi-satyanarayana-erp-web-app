@@ -24,6 +24,8 @@ import {
   Plus,
   Minus,
   Check,
+  Award,
+  Coins,
 } from 'lucide-react';
 import AdminHeader from '../header/page';
 import AdminSidebar from '../sidebar/page';
@@ -39,6 +41,8 @@ import {
 } from '@/lib/createbillStore';
 import { Product } from '@/lib/productsStore';
 import { Customer } from '@/lib/customersStore';
+import { AssociateRecord } from '@/lib/adminassociateStore';
+import AttachAssociate from '@/components/attachassociate';
 
 export default function CreateBillPage() {
   const router = useRouter();
@@ -63,6 +67,10 @@ export default function CreateBillPage() {
   const [selectedCustomerIndex, setSelectedCustomerIndex] = useState(0);
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+
+  // Associate State
+  const [attachedAssociate, setAttachedAssociate] = useState<AssociateRecord | null>(null);
+  const [showAttachAssociateModal, setShowAttachAssociateModal] = useState(false);
 
   // Quick Add Customer Modal
   const [showQuickAddModal, setShowQuickAddModal] = useState(false);
@@ -94,8 +102,9 @@ export default function CreateBillPage() {
   const saveAndPrintBtnRef = useRef<HTMLButtonElement | null>(null);
   const draftBtnRef = useRef<HTMLButtonElement | null>(null);
 
-  // 2D Array refs for items: [rowIndex][field: 'qty' | 'sp']
+  // 2D Array refs for items: [rowIndex][field: 'qty' | 'disc' | 'sp']
   const qtyInputRefs = useRef<{ [key: number]: HTMLInputElement | null }>({});
+  const discInputRefs = useRef<{ [key: number]: HTMLInputElement | null }>({});
   const spInputRefs = useRef<{ [key: number]: HTMLInputElement | null }>({});
 
   // Initialize Next Bill ID on load
@@ -192,6 +201,12 @@ export default function CreateBillPage() {
     const existingIndex = items.findIndex((i) => i.product_id === prod.id);
     let targetIndex = 0;
 
+    const prodDiscount = Number(prod.discount || 0);
+    const prodSp = Number(
+      prod.selling_price ||
+        Math.max(0, prod.mrp - (prod.mrp * prodDiscount) / 100)
+    );
+
     if (existingIndex >= 0) {
       // Increment quantity of existing item
       const updated = [...items];
@@ -212,8 +227,9 @@ export default function CreateBillPage() {
         product_code: prod.product_id,
         mrp: prod.mrp,
         quantity: 1,
-        selling_price: prod.selling_price,
-        row_total: Number((1 * prod.selling_price).toFixed(2)),
+        discount: prodDiscount,
+        selling_price: prodSp,
+        row_total: Number((1 * prodSp).toFixed(2)),
         available_stock: prod.quantity,
         unit: prod.unit,
       };
@@ -246,13 +262,30 @@ export default function CreateBillPage() {
     setItems(updated);
   };
 
-  // Update item selling price in table
-  const handleSellingPriceChange = (index: number, newSp: number) => {
+  // Update item discount in table (auto calculates selling_price = mrp - (mrp * discount%) / 100)
+  const handleItemDiscountChange = (index: number, newDisc: number) => {
     const updated = [...items];
-    const sp = isNaN(newSp) ? 0 : newSp;
+    const disc = isNaN(newDisc) ? 0 : Math.max(0, newDisc);
+    const mrp = Number(updated[index].mrp || 0);
+    const newSp = Math.max(0, mrp - (mrp * disc) / 100);
     const qty = updated[index].quantity;
     updated[index] = {
       ...updated[index],
+      discount: disc,
+      selling_price: Number(newSp.toFixed(2)),
+      row_total: Number((qty * newSp).toFixed(2)),
+    };
+    setItems(updated);
+  };
+
+  // Update item selling price in table (if entered directly put discount 0)
+  const handleSellingPriceChange = (index: number, newSp: number) => {
+    const updated = [...items];
+    const sp = isNaN(newSp) ? 0 : Math.max(0, newSp);
+    const qty = updated[index].quantity;
+    updated[index] = {
+      ...updated[index],
+      discount: 0,
       selling_price: sp,
       row_total: Number((qty * sp).toFixed(2)),
     };
@@ -297,15 +330,15 @@ export default function CreateBillPage() {
   const handleQtyKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, index: number) => {
     if (e.key === 'Enter' || e.key === 'ArrowRight') {
       e.preventDefault();
-      spInputRefs.current[index]?.focus();
-      spInputRefs.current[index]?.select();
+      discInputRefs.current[index]?.focus();
+      discInputRefs.current[index]?.select();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       if (index < items.length - 1) {
         qtyInputRefs.current[index + 1]?.focus();
         qtyInputRefs.current[index + 1]?.select();
       } else {
-        spInputRefs.current[index]?.focus();
+        discInputRefs.current[index]?.focus();
       }
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
@@ -319,18 +352,46 @@ export default function CreateBillPage() {
     }
   };
 
-  const handleSpKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, index: number) => {
-    if (e.key === 'ArrowLeft') {
+  const handleDiscKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, index: number) => {
+    if (e.key === 'Enter' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      spInputRefs.current[index]?.focus();
+      spInputRefs.current[index]?.select();
+    } else if (e.key === 'ArrowLeft') {
       e.preventDefault();
       qtyInputRefs.current[index]?.focus();
       qtyInputRefs.current[index]?.select();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (index < items.length - 1) {
+        discInputRefs.current[index + 1]?.focus();
+        discInputRefs.current[index + 1]?.select();
+      } else {
+        spInputRefs.current[index]?.focus();
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (index > 0) {
+        discInputRefs.current[index - 1]?.focus();
+        discInputRefs.current[index - 1]?.select();
+      } else {
+        qtyInputRefs.current[index]?.focus();
+      }
+    }
+  };
+
+  const handleSpKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, index: number) => {
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      discInputRefs.current[index]?.focus();
+      discInputRefs.current[index]?.select();
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       if (index > 0) {
         spInputRefs.current[index - 1]?.focus();
         spInputRefs.current[index - 1]?.select();
       } else {
-        qtyInputRefs.current[index]?.focus();
+        discInputRefs.current[index]?.focus();
       }
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -503,11 +564,13 @@ export default function CreateBillPage() {
 
     const payload = {
       customer_id: selectedCustomer?.id || null,
+      associate_id: attachedAssociate?.id || null,
       items: items.map((i) => ({
         product_id: i.product_id,
         product_name: i.product_name,
         mrp: i.mrp,
         quantity: i.quantity,
+        discount: i.discount ?? 0,
         selling_price: i.selling_price,
         row_total: i.row_total,
       })),
@@ -546,6 +609,7 @@ export default function CreateBillPage() {
     setUpiAmount('');
     setCreditAmount('');
     setSelectedCustomer(null);
+    setAttachedAssociate(null);
     setCustomerQuery('');
     setProductQuery('');
     setBillError(null);
@@ -751,19 +815,20 @@ export default function CreateBillPage() {
                     <table className="erp-table w-full text-left text-xs">
                       <thead className="erp-thead bg-[var(--surface-subtle)] text-[var(--text-secondary)] border-b border-[var(--border)]">
                         <tr>
-                          <th className="erp-th py-3 px-3 w-12 text-center">S.NO</th>
+                          <th className="erp-th py-3 px-3 w-10 text-center">S.NO</th>
                           <th className="erp-th py-3 px-4">PRODUCT NAME</th>
-                          <th className="erp-th py-3 px-3 text-right">MRP (₹)</th>
-                          <th className="erp-th py-3 px-3 text-center w-28">QUANTITY</th>
-                          <th className="erp-th py-3 px-3 text-center w-32">SELLING PRICE (₹)</th>
-                          <th className="erp-th py-3 px-4 text-right">ROW TOTAL (₹)</th>
-                          <th className="erp-th py-3 px-3 text-center w-12">ACTION</th>
+                          <th className="erp-th py-3 px-2 text-right w-24">MRP (₹)</th>
+                          <th className="erp-th py-3 px-2 text-center w-24">QUANTITY</th>
+                          <th className="erp-th py-3 px-2 text-center w-24">DISCOUNT (%)</th>
+                          <th className="erp-th py-3 px-2 text-center w-28">SELLING PRICE (₹)</th>
+                          <th className="erp-th py-3 px-4 text-right w-28">ROW TOTAL (₹)</th>
+                          <th className="erp-th py-3 px-2 text-center w-10">ACTION</th>
                         </tr>
                       </thead>
                       <tbody className="erp-tbody divide-y divide-[var(--border)]">
                         {items.length === 0 ? (
                           <tr>
-                            <td colSpan={7} className="py-16 text-center text-[var(--text-muted)]">
+                            <td colSpan={8} className="py-16 text-center text-[var(--text-muted)]">
                               <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
                                 <Scan className="w-8 h-8 text-[var(--text-muted)] opacity-60" />
                                 <span className="font-semibold text-sm text-[var(--text-primary)]">
@@ -799,12 +864,12 @@ export default function CreateBillPage() {
                               </td>
 
                               {/* MRP */}
-                              <td className="py-2.5 px-3 text-right font-mono text-[var(--text-secondary)]">
+                              <td className="py-2.5 px-2 text-right font-mono text-[var(--text-secondary)]">
                                 ₹{Number(item.mrp || 0).toFixed(2)}
                               </td>
 
                               {/* Quantity Input */}
-                              <td className="py-2.5 px-3">
+                              <td className="py-2.5 px-2">
                                 <div className="flex items-center justify-center">
                                   <input
                                     ref={(el) => {
@@ -823,8 +888,28 @@ export default function CreateBillPage() {
                                 </div>
                               </td>
 
+                              {/* Discount Input */}
+                              <td className="py-2.5 px-2">
+                                <div className="flex items-center justify-center">
+                                  <input
+                                    ref={(el) => {
+                                      discInputRefs.current[idx] = el;
+                                    }}
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={item.discount ?? 0}
+                                    onChange={(e) =>
+                                      handleItemDiscountChange(idx, parseFloat(e.target.value))
+                                    }
+                                    onKeyDown={(e) => handleDiscKeyDown(e, idx)}
+                                    className="erp-input w-20 text-center text-xs font-bold font-mono py-1 px-1.5 focus:border-[var(--primary)] focus:ring-1 focus:ring-[var(--primary)]"
+                                  />
+                                </div>
+                              </td>
+
                               {/* Selling Price Input */}
-                              <td className="py-2.5 px-3">
+                              <td className="py-2.5 px-2">
                                 <div className="flex items-center justify-center">
                                   <input
                                     ref={(el) => {
@@ -849,7 +934,7 @@ export default function CreateBillPage() {
                               </td>
 
                               {/* Action: Delete Row */}
-                              <td className="py-2.5 px-3 text-center">
+                              <td className="py-2.5 px-2 text-center">
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveItem(idx)}
@@ -885,28 +970,81 @@ export default function CreateBillPage() {
                 
                 {/* 1. Customer Section */}
                 <div className="p-4 rounded-xl bg-[var(--surface)] border border-[var(--border)] shadow-xs relative space-y-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-1.5 text-xs font-bold text-[var(--text-primary)]">
                       <User className="w-4 h-4 text-[var(--primary)]" />
                       <span>Customer Details</span>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setQuickCustName('');
-                        setQuickCustMobile(customerQuery.trim());
-                        setQuickCustPoints(0);
-                        setQuickCustCredit(0);
-                        setQuickCustError(null);
-                        setShowQuickAddModal(true);
-                      }}
-                      className="erp-btn erp-btn-outline erp-btn-sm text-[11px] py-1 px-2.5 flex items-center gap-1 cursor-pointer"
-                    >
-                      <UserPlus className="w-3 h-3" />
-                      <span>+ Quick Add</span>
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      {/* Attach Associate Button */}
+                      <button
+                        type="button"
+                        onClick={() => setShowAttachAssociateModal(true)}
+                        className={`erp-btn ${
+                          attachedAssociate
+                            ? 'erp-btn-primary'
+                            : 'erp-btn-outline'
+                        } erp-btn-sm text-[11px] py-1 px-2 flex items-center gap-1 cursor-pointer`}
+                        title="Attach Associate for 2% Reward Points"
+                      >
+                        <Award className="w-3 h-3" />
+                        <span>{attachedAssociate ? 'Associate' : 'Attach Associate'}</span>
+                      </button>
+
+                      {/* Quick Add Customer Button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuickCustName('');
+                          setQuickCustMobile(customerQuery.trim());
+                          setQuickCustPoints(0);
+                          setQuickCustCredit(0);
+                          setQuickCustError(null);
+                          setShowQuickAddModal(true);
+                        }}
+                        className="erp-btn erp-btn-outline erp-btn-sm text-[11px] py-1 px-2 flex items-center gap-1 cursor-pointer"
+                      >
+                        <UserPlus className="w-3 h-3" />
+                        <span>+ Quick Add</span>
+                      </button>
+                    </div>
                   </div>
+
+                  {/* Attached Associate Badge / Card */}
+                  {attachedAssociate && (
+                    <div className="p-2.5 rounded-lg bg-[var(--surface-subtle)] border border-[var(--border)] flex items-center justify-between text-xs erp-slide-up">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 rounded-full bg-[var(--accent-light)] text-[var(--accent)] flex items-center justify-center font-bold text-xs shrink-0">
+                          {(attachedAssociate.profile?.name || 'A').charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 font-bold text-[var(--text-primary)]">
+                            <span className="truncate">{attachedAssociate.profile?.name || 'Associate'}</span>
+                            <span className="erp-badge erp-badge-secondary font-mono text-[9px] py-0 px-1 shrink-0">
+                              {attachedAssociate.associate_id}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-[var(--text-muted)] flex items-center gap-2 mt-0.5">
+                            <span>{attachedAssociate.profile?.mobile}</span>
+                            <span>•</span>
+                            <span className="text-[var(--accent)] font-semibold font-mono flex items-center gap-0.5">
+                              <Coins className="w-3 h-3 text-[var(--warning)]" />
+                              {attachedAssociate.current_points ?? 0} pts
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAttachedAssociate(null)}
+                        className="p-1 rounded text-[var(--text-muted)] hover:text-[var(--danger)] cursor-pointer shrink-0 ml-1.5"
+                        title="Detach Associate"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
 
                   {/* Selected Customer View */}
                   {selectedCustomer ? (
@@ -1444,6 +1582,14 @@ export default function CreateBillPage() {
           </div>
         </div>
       )}
+
+      {/* Attach Associate Modal */}
+      <AttachAssociate
+        isOpen={showAttachAssociateModal}
+        onClose={() => setShowAttachAssociateModal(false)}
+        onSelect={(assoc) => setAttachedAssociate(assoc)}
+        selectedAssociateId={attachedAssociate?.id}
+      />
     </div>
   );
 }

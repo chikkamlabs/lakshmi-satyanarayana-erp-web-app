@@ -15,6 +15,7 @@ import {
   Calendar,
   Trash2,
   AlertTriangle,
+  Percent,
 } from 'lucide-react';
 import {
   updateProduct,
@@ -69,8 +70,9 @@ function OpenProductModalContent({
   const [productId, setProductId] = useState(product.product_id || '');
   const [categoryId, setCategoryId] = useState(product.category_id || '');
   const [quantity, setQuantity] = useState<number | string>(product.quantity ?? 0);
-  const [sellingPrice, setSellingPrice] = useState<number | string>(product.selling_price ?? 0);
   const [mrp, setMrp] = useState<number | string>(product.mrp ?? 0);
+  const [discount, setDiscount] = useState<number | string>(product.discount ?? 0);
+  const [sellingPrice, setSellingPrice] = useState<number | string>(product.selling_price ?? 0);
   const [lowStock, setLowStock] = useState<number | string>(product.low_stock ?? 10);
   const [unit, setUnit] = useState(product.unit || 'Piece');
   const [status, setStatus] = useState<ProductStatus>(product.status || 'active');
@@ -81,6 +83,44 @@ function OpenProductModalContent({
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Auto calculate selling price when MRP changes (selling_price = mrp - (mrp * discount%) / 100)
+  const handleMrpChange = (val: string) => {
+    setMrp(val);
+    const mrpNum = parseFloat(val);
+    const discNum = parseFloat(String(discount));
+    if (!isNaN(mrpNum)) {
+      if (!isNaN(discNum) && discNum > 0) {
+        const calculatedSp = Math.max(0, mrpNum - (mrpNum * discNum) / 100);
+        setSellingPrice(calculatedSp.toFixed(2));
+      } else {
+        if (Number(sellingPrice) === 0 || Number(sellingPrice) > mrpNum) {
+          setSellingPrice(mrpNum.toFixed(2));
+        }
+      }
+    }
+  };
+
+  // Auto calculate selling price when discount% changes (selling_price = mrp - (mrp * discount%) / 100)
+  const handleDiscountChange = (val: string) => {
+    setDiscount(val);
+    const mrpNum = parseFloat(String(mrp));
+    const discNum = parseFloat(val);
+    if (!isNaN(mrpNum)) {
+      if (!isNaN(discNum)) {
+        const calculatedSp = Math.max(0, mrpNum - (mrpNum * discNum) / 100);
+        setSellingPrice(calculatedSp.toFixed(2));
+      } else {
+        setSellingPrice(mrpNum.toFixed(2));
+      }
+    }
+  };
+
+  // If selling_price entered directly put discount 0
+  const handleSellingPriceChange = (val: string) => {
+    setSellingPrice(val);
+    setDiscount('0');
+  };
 
   useEffect(() => {
     let active = true;
@@ -140,18 +180,23 @@ function OpenProductModalContent({
     const qtyNum = Number(quantity);
     const spNum = Number(sellingPrice);
     const mrpNum = Number(mrp);
+    const discNum = Number(discount);
     const lowStockNum = Number(lowStock);
 
     if (isNaN(qtyNum) || qtyNum < 0) {
       setError('Quantity must be 0 or a positive number.');
       return;
     }
-    if (isNaN(spNum) || spNum < 0) {
-      setError('Selling Price must be 0 or a positive amount.');
-      return;
-    }
     if (isNaN(mrpNum) || mrpNum < 0) {
       setError('MRP must be 0 or a positive amount.');
+      return;
+    }
+    if (isNaN(discNum) || discNum < 0) {
+      setError('Discount must be 0 or a positive amount.');
+      return;
+    }
+    if (isNaN(spNum) || spNum < 0) {
+      setError('Selling Price must be 0 or a positive amount.');
       return;
     }
     if (isNaN(lowStockNum) || lowStockNum < 0) {
@@ -168,6 +213,7 @@ function OpenProductModalContent({
       product_id: productId.trim(),
       category_id: categoryId,
       quantity: qtyNum,
+      discount: discNum,
       selling_price: spNum,
       mrp: mrpNum,
       low_stock: lowStockNum,
@@ -390,24 +436,6 @@ function OpenProductModalContent({
               </div>
             </div>
 
-            {/* Selling Price */}
-            <div className="erp-form-group">
-              <label htmlFor="edit-product-selling-price" className="erp-label flex items-center gap-1.5">
-                <IndianRupee className="w-3.5 h-3.5 text-[var(--success)]" />
-                <span>Selling Price (₹) <span className="text-[var(--danger)]">*</span></span>
-              </label>
-              <input
-                id="edit-product-selling-price"
-                type="number"
-                step="0.01"
-                min="0"
-                value={sellingPrice}
-                onChange={(e) => setSellingPrice(e.target.value)}
-                className="erp-input text-xs font-mono font-semibold"
-                required
-              />
-            </div>
-
             {/* MRP */}
             <div className="erp-form-group">
               <label htmlFor="edit-product-mrp" className="erp-label flex items-center gap-1.5">
@@ -420,8 +448,51 @@ function OpenProductModalContent({
                 step="0.01"
                 min="0"
                 value={mrp}
-                onChange={(e) => setMrp(e.target.value)}
+                onChange={(e) => handleMrpChange(e.target.value)}
                 className="erp-input text-xs font-mono"
+                required
+              />
+            </div>
+
+            {/* Discount */}
+            <div className="erp-form-group">
+              <label htmlFor="edit-product-discount" className="erp-label flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Percent className="w-3.5 h-3.5 text-[var(--primary)]" />
+                  <span>Discount (%)</span>
+                </span>
+                <span className="text-[10px] text-[var(--text-muted)] font-normal">Auto calculates SP</span>
+              </label>
+              <input
+                id="edit-product-discount"
+                type="number"
+                step="0.01"
+                min="0"
+                max="100"
+                value={discount}
+                onChange={(e) => handleDiscountChange(e.target.value)}
+                placeholder="0.00%"
+                className="erp-input text-xs font-mono"
+              />
+            </div>
+
+            {/* Selling Price */}
+            <div className="erp-form-group">
+              <label htmlFor="edit-product-selling-price" className="erp-label flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <IndianRupee className="w-3.5 h-3.5 text-[var(--success)]" />
+                  <span>Selling Price (₹) <span className="text-[var(--danger)]">*</span></span>
+                </span>
+                <span className="text-[10px] text-[var(--text-muted)] font-normal">Direct entry sets disc=0</span>
+              </label>
+              <input
+                id="edit-product-selling-price"
+                type="number"
+                step="0.01"
+                min="0"
+                value={sellingPrice}
+                onChange={(e) => handleSellingPriceChange(e.target.value)}
+                className="erp-input text-xs font-mono font-semibold"
                 required
               />
             </div>
