@@ -8,6 +8,7 @@ export interface BillItemInput {
   product_code?: string;
   mrp: number;
   quantity: number;
+  discount?: number;
   selling_price: number;
   row_total: number;
   available_stock?: number;
@@ -22,6 +23,7 @@ export interface PaymentBreakdown {
 
 export interface CreateBillPayload {
   customer_id?: string | null;
+  associate_id?: string | null;
   items: BillItemInput[];
   sub_total: number;
   discount: number;
@@ -37,6 +39,7 @@ export interface CreatedBillResult {
   id: string;
   bill_id: string;
   customer_id?: string | null;
+  associate_id?: string | null;
   sub_total: number;
   discount: number;
   total: number;
@@ -306,6 +309,7 @@ export async function createBill(payload: CreateBillPayload): Promise<{
         id: `mock-bill-${Date.now()}`,
         bill_id: nextBillCode,
         customer_id: payload.customer_id,
+        associate_id: payload.associate_id,
         sub_total: payload.sub_total,
         discount: payload.discount,
         total: payload.total,
@@ -322,6 +326,7 @@ export async function createBill(payload: CreateBillPayload): Promise<{
         {
           bill_id: nextBillCode,
           customer_id: payload.customer_id || null,
+          associate_id: payload.associate_id || null,
           sub_total: payload.sub_total,
           discount: payload.discount,
           taxable_amount: payload.taxable_amount ?? payload.total,
@@ -348,6 +353,7 @@ export async function createBill(payload: CreateBillPayload): Promise<{
       product_name: item.product_name,
       mrp: item.mrp,
       quantity: item.quantity,
+      discount: item.discount ?? 0,
       selling_price: item.selling_price,
       row_total: item.row_total,
     }));
@@ -472,11 +478,57 @@ export async function createBill(payload: CreateBillPayload): Promise<{
       }
     }
 
+    // 7. If associate is attached, insert associate_p_trans:
+    // points = (2 * total bill amount / 100)
+    // calc = 'add'
+    // balance_points = attached associate.current_points + points
+    // bill_id = current bill id
+    if (payload.associate_id && payload.total > 0) {
+      try {
+        const assocPointsToAdd = Math.round((2 * Number(payload.total)) / 100);
+        if (assocPointsToAdd > 0) {
+          const { data: assocData } = await supabase
+            .from('associates')
+            .select('current_points')
+            .eq('id', payload.associate_id)
+            .single();
+
+          const currentAssocPoints = Number(assocData?.current_points ?? 0);
+          const balancePoints = currentAssocPoints + assocPointsToAdd;
+
+          // Insert into associate_p_trans
+          await supabase.from('associate_p_trans').insert([
+            {
+              associate_id: payload.associate_id,
+              points: assocPointsToAdd,
+              calc: 'add',
+              balance_points: balancePoints,
+              bill_id: billId,
+              description: `Points credited for Bill #${nextBillCode}`,
+              created_at: new Date().toISOString(),
+            },
+          ]);
+
+          // Update associates table
+          await supabase
+            .from('associates')
+            .update({
+              current_points: balancePoints,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', payload.associate_id);
+        }
+      } catch (assocErr) {
+        console.error('Error adding associate points & transaction:', assocErr);
+      }
+    }
+
     return {
       data: {
         id: billData.id,
         bill_id: billData.bill_id,
         customer_id: billData.customer_id,
+        associate_id: billData.associate_id,
         sub_total: Number(billData.sub_total),
         discount: Number(billData.discount),
         total: Number(billData.total),

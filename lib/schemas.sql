@@ -220,6 +220,7 @@ CREATE TABLE IF NOT EXISTS public.products (
     category_id UUID NOT NULL REFERENCES public.categories(id) ON DELETE RESTRICT,
     quantity DECIMAL(10,2) NOT NULL DEFAULT 0.00 CHECK (quantity >= 0),
     selling_price DECIMAL(12,2) NOT NULL DEFAULT 0.00 CHECK (selling_price >= 0),
+    discount DECIMAL(5,2) NOT NULL DEFAULT 0.00 CHECK (discount >= 0),
     mrp DECIMAL(12,2) NOT NULL DEFAULT 0.00 CHECK (mrp >= 0),
     low_stock DECIMAL(10,2) NOT NULL DEFAULT 0.00 CHECK (low_stock >= 0),
     unit VARCHAR(20) NOT NULL DEFAULT 'Piece',
@@ -233,6 +234,7 @@ CREATE TABLE IF NOT EXISTS public.bills (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     bill_id VARCHAR(50) UNIQUE NOT NULL,
     customer_id UUID NULL REFERENCES public.customers(id) ON DELETE SET NULL,
+    associate_id UUID NULL REFERENCES public.associates(id) ON DELETE SET NULL,
     sub_total DECIMAL(12,2) NOT NULL DEFAULT 0.00 CHECK (sub_total >= 0),
     discount DECIMAL(12,2) NOT NULL DEFAULT 0.00 CHECK (discount >= 0),
     taxable_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00 CHECK (taxable_amount >= 0),
@@ -264,6 +266,7 @@ CREATE TABLE IF NOT EXISTS public.bill_items (
     product_name VARCHAR(150) NOT NULL,
     mrp DECIMAL(12,2) NOT NULL DEFAULT 0.00 CHECK (mrp >= 0),
     quantity DECIMAL(10,2) NOT NULL CHECK (quantity > 0),
+    discount DECIMAL(5,2) NOT NULL DEFAULT 0.00 CHECK (discount >= 0),
     selling_price DECIMAL(12,2) NOT NULL DEFAULT 0.00 CHECK (selling_price >= 0),
     row_total DECIMAL(12,2) NOT NULL DEFAULT 0.00 CHECK (row_total >= 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -370,6 +373,7 @@ CREATE INDEX IF NOT EXISTS idx_products_status ON public.products(status);
 
 CREATE INDEX IF NOT EXISTS idx_bills_bill_id ON public.bills(bill_id);
 CREATE INDEX IF NOT EXISTS idx_bills_customer_id ON public.bills(customer_id);
+CREATE INDEX IF NOT EXISTS idx_bills_associate_id ON public.bills(associate_id);
 CREATE INDEX IF NOT EXISTS idx_bills_created_at ON public.bills(created_at);
 CREATE INDEX IF NOT EXISTS idx_bills_type ON public.bills(type);
 CREATE INDEX IF NOT EXISTS idx_bills_status ON public.bills(status);
