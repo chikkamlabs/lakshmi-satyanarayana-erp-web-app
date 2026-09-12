@@ -26,6 +26,7 @@ import {
   Check,
   Award,
   Coins,
+  MessageCircle,
 } from 'lucide-react';
 import AdminHeader from '../header/page';
 import AdminSidebar from '../sidebar/page';
@@ -42,6 +43,7 @@ import {
 import { Product } from '@/lib/productsStore';
 import { Customer } from '@/lib/customersStore';
 import { AssociateRecord } from '@/lib/adminassociateStore';
+import { sendWhatsAppBill } from '@/lib/whatsapp';
 import AttachAssociate from '@/components/attachassociate';
 
 export default function CreateBillPage() {
@@ -620,6 +622,12 @@ export default function CreateBillPage() {
     }, 100);
   };
 
+  // Send Bill via WhatsApp
+  const handleSendWhatsAppBill = () => {
+    if (!lastSavedBill) return;
+    sendWhatsAppBill(lastSavedBill, items, selectedCustomer);
+  };
+
   const formatCurrency = (val: number) => {
     return `₹${Number(val || 0).toLocaleString('en-IN', {
       minimumFractionDigits: 2,
@@ -710,7 +718,7 @@ export default function CreateBillPage() {
                   
                   <div className="flex items-center gap-2 relative">
                     <div className="relative flex-1">
-                      <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                      <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
                       <input
                         ref={productSearchInputRef}
                         id="product-search-input"
@@ -719,7 +727,7 @@ export default function CreateBillPage() {
                         onChange={(e) => setProductQuery(e.target.value)}
                         onKeyDown={handleProductSearchKeyDown}
                         placeholder="Type product name or scan barcode..."
-                        className="erp-input pl-9.5 pr-8 text-xs sm:text-sm font-medium w-full"
+                        className="erp-input !pl-10 pr-8 text-xs sm:text-sm font-medium w-full"
                         autoComplete="off"
                         autoFocus
                       />
@@ -1492,9 +1500,9 @@ export default function CreateBillPage() {
             <div id="printable-receipt-area" className="p-6 bg-white text-black space-y-4 font-mono text-xs">
               {/* Receipt Header */}
               <div className="text-center border-b border-dashed border-gray-300 pb-3">
-                <h2 className="text-base font-bold tracking-tight">DS DRY FRUITS</h2>
-                <p className="text-[11px] text-gray-600">Lakshmi Satyanarayana Enterprises</p>
-                <p className="text-[10px] text-gray-500">Fast Retail &amp; Wholesale POS</p>
+                <h2 className="text-base font-bold tracking-tight">LAKSHMI SATYANARAYANA ENTERPRISES</h2>
+                <p className="text-[10px] text-gray-600">Opp. andhra bank, main road, amaravathi</p>
+                <p className="text-[10px] text-gray-600">Mobile: 9063532585</p>
                 <div className="mt-2 text-[11px] flex justify-between border-t border-gray-200 pt-1">
                   <span>Bill No: {lastSavedBill.bill_id}</span>
                   <span>Date: {new Date(lastSavedBill.created_at).toLocaleDateString()}</span>
@@ -1557,27 +1565,40 @@ export default function CreateBillPage() {
             </div>
 
             {/* Modal Controls */}
-            <div className="p-4 border-t border-[var(--border)] bg-[var(--surface-subtle)] flex items-center justify-end gap-2.5 print:hidden">
+            <div className="p-4 border-t border-[var(--border)] bg-[var(--surface-subtle)] flex items-center justify-between gap-2.5 print:hidden">
               <button
+                id="whatsapp-bill-btn"
                 type="button"
-                onClick={() => {
-                  setShowPrintModal(false);
-                  handleResetBillForm();
-                }}
-                className="erp-btn erp-btn-outline text-xs cursor-pointer"
+                onClick={handleSendWhatsAppBill}
+                className="erp-btn bg-[#25D366] hover:bg-[#20ba59] text-white border-transparent text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                title="Send Bill details via WhatsApp"
               >
-                Done / Next Bill
+                <MessageCircle className="w-4 h-4" />
+                <span>WhatsApp Bill</span>
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  window.print();
-                }}
-                className="erp-btn erp-btn-primary text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                <span>Print Receipt</span>
-              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPrintModal(false);
+                    handleResetBillForm();
+                  }}
+                  className="erp-btn erp-btn-outline text-xs cursor-pointer"
+                >
+                  Done / Next Bill
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.print();
+                  }}
+                  className="erp-btn erp-btn-primary text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print Receipt</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
