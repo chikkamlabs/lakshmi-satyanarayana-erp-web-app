@@ -306,33 +306,33 @@ export default function ProductsDashboardPage() {
 
             {/* Filter and Search Controls */}
             <div className="p-4 rounded-xl bg-[var(--surface)] border border-[var(--border)] shadow-xs space-y-3">
-              <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+              <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
                 {/* Search Bar */}
                 <div className="relative flex-1 min-w-[240px]">
-                  <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                  <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
                   <input
                     id="products-search-input"
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search by product name, code, SKU, or category..."
-                    className="erp-input pl-9.5 text-xs w-full"
+                    className="erp-input !pl-10 text-xs w-full"
                   />
                   {searchQuery && (
                     <button
                       type="button"
                       onClick={() => setSearchQuery('')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
                     >
                       Clear
                     </button>
                   )}
                 </div>
 
-                {/* Dropdown Filters */}
-                <div className="flex flex-wrap items-center gap-2">
+                {/* Dropdown Filters in single row */}
+                <div className="flex flex-row items-center gap-2 shrink-0 overflow-x-auto">
                   {/* Category Filter */}
-                  <div className="flex items-center gap-1.5 min-w-[150px]">
+                  <div className="flex items-center gap-1.5 min-w-[140px]">
                     <Tag className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0 hidden sm:inline-block" />
                     <select
                       id="products-category-filter"
@@ -349,12 +349,12 @@ export default function ProductsDashboardPage() {
                     </select>
                   </div>
 
-                  {/* Status Filter */}
+                  {/* Status Filter (Decreased width) */}
                   <select
                     id="products-status-filter"
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value)}
-                    className="erp-select text-xs w-28 bg-[var(--surface)]"
+                    className="erp-select text-xs w-24 bg-[var(--surface)] shrink-0"
                   >
                     <option value="all">All Status</option>
                     <option value="active">Active</option>
@@ -365,7 +365,7 @@ export default function ProductsDashboardPage() {
                   <button
                     type="button"
                     onClick={() => setLowStockOnly((prev) => !prev)}
-                    className={`erp-btn text-xs py-2 px-3 flex items-center gap-1.5 cursor-pointer transition-colors ${
+                    className={`erp-btn text-xs py-2 px-3 flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition-colors ${
                       lowStockOnly
                         ? 'bg-[var(--danger)] text-white hover:bg-[var(--danger-hover)]'
                         : 'erp-btn-outline bg-[var(--surface)]'

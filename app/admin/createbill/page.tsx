@@ -43,8 +43,8 @@ import {
 import { Product } from '@/lib/productsStore';
 import { Customer } from '@/lib/customersStore';
 import { AssociateRecord } from '@/lib/adminassociateStore';
-import { sendWhatsAppBill } from '@/lib/whatsapp';
 import AttachAssociate from '@/components/attachassociate';
+import PrintBillModal from '@/components/printbill';
 
 export default function CreateBillPage() {
   const router = useRouter();
@@ -91,8 +91,14 @@ export default function CreateBillPage() {
   // Submission / Loading
   const [savingBill, setSavingBill] = useState(false);
   const [billError, setBillError] = useState<string | null>(null);
-  const [lastSavedBill, setLastSavedBill] = useState<CreatedBillResult | null>(null);
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const [savedBillSnapshot, setSavedBillSnapshot] = useState<{
+    bill: CreatedBillResult;
+    items: BillItemInput[];
+    customer?: Customer | null;
+    associate?: AssociateRecord | null;
+    payments?: PaymentBreakdown;
+  } | null>(null);
 
   // DOM Refs for strict keyboard focus chaining
   const productSearchInputRef = useRef<HTMLInputElement | null>(null);
@@ -190,6 +196,12 @@ export default function CreateBillPage() {
   const numCredit = Number(creditAmount) || 0;
   const totalPaid = numCash + numUpi + numCredit;
   const remainingPayment = Math.max(0, totalAmount - totalPaid);
+
+  // If items exist, total is covered and due is 0
+  const isFullyCovered =
+    items.length > 0 &&
+    remainingPayment === 0 &&
+    (totalAmount > 0 ? totalPaid >= totalAmount : true);
 
   // Auto-set full cash helper
   const handleSetFullCash = () => {
@@ -544,6 +556,10 @@ export default function CreateBillPage() {
     }
 
     if (status === 'paid') {
+      if (!isFullyCovered) {
+        setBillError('Payment must be fully covered (Due must be ₹0.00) before saving the bill.');
+        return;
+      }
       // Ensure payments sum up or at least credit is assigned
       if (numCredit > 0 && !selectedCustomer) {
         setBillError('Customer must be selected for Credit payment mode.');
@@ -555,14 +571,9 @@ export default function CreateBillPage() {
     setSavingBill(true);
     setBillError(null);
 
-    // Auto-fill cash if no payment entered
-    let finalCash = numCash;
-    let finalUpi = numUpi;
-    let finalCredit = numCredit;
-
-    if (finalCash === 0 && finalUpi === 0 && finalCredit === 0 && status === 'paid') {
-      finalCash = totalAmount;
-    }
+    const finalCash = numCash;
+    const finalUpi = numUpi;
+    const finalCredit = numCredit;
 
     const payload = {
       customer_id: selectedCustomer?.id || null,
@@ -593,7 +604,23 @@ export default function CreateBillPage() {
     if (res.error) {
       setBillError(res.error);
     } else if (res.data) {
-      setLastSavedBill(res.data);
+      const currentItems = [...items];
+      const currentCustomer = selectedCustomer;
+      const currentAssociate = attachedAssociate;
+      const currentPayments: PaymentBreakdown = {
+        cash: finalCash,
+        upi: finalUpi,
+        credit: finalCredit,
+      };
+
+      setSavedBillSnapshot({
+        bill: res.data,
+        items: currentItems,
+        customer: currentCustomer,
+        associate: currentAssociate,
+        payments: currentPayments,
+      });
+
       if (printAfter) {
         setShowPrintModal(true);
       } else {
@@ -620,12 +647,6 @@ export default function CreateBillPage() {
     setTimeout(() => {
       productSearchInputRef.current?.focus();
     }, 100);
-  };
-
-  // Send Bill via WhatsApp
-  const handleSendWhatsAppBill = () => {
-    if (!lastSavedBill) return;
-    sendWhatsAppBill(lastSavedBill, items, selectedCustomer);
   };
 
   const formatCurrency = (val: number) => {
@@ -1302,8 +1323,17 @@ export default function CreateBillPage() {
                       id="save-and-print-bill-btn"
                       type="button"
                       onClick={() => handleSaveBill('paid', true)}
-                      disabled={savingBill || items.length === 0}
-                      className="erp-btn erp-btn-primary w-full py-2.5 flex items-center justify-center gap-2 text-xs sm:text-sm font-bold shadow-xs cursor-pointer focus:ring-4 focus:ring-[var(--primary)]/30"
+                      disabled={savingBill || !isFullyCovered}
+                      title={
+                        !isFullyCovered
+                          ? 'Payment must be fully covered (Due must be ₹0.00) to save & print'
+                          : 'Save & Print (Enter)'
+                      }
+                      className={`erp-btn erp-btn-primary w-full py-2.5 flex items-center justify-center gap-2 text-xs sm:text-sm font-bold shadow-xs focus:ring-4 focus:ring-[var(--primary)]/30 transition-all ${
+                        !isFullyCovered
+                          ? 'opacity-50 cursor-not-allowed bg-[var(--primary)]/70'
+                          : 'cursor-pointer'
+                      }`}
                     >
                       {savingBill ? (
                         <>
@@ -1335,8 +1365,17 @@ export default function CreateBillPage() {
                         id="save-only-bill-btn"
                         type="button"
                         onClick={() => handleSaveBill('paid', false)}
-                        disabled={savingBill || items.length === 0}
-                        className="erp-btn erp-btn-secondary w-full py-2 text-xs font-semibold cursor-pointer flex items-center justify-center gap-1.5"
+                        disabled={savingBill || !isFullyCovered}
+                        title={
+                          !isFullyCovered
+                            ? 'Payment must be fully covered (Due must be ₹0.00) to save'
+                            : 'Save Only'
+                        }
+                        className={`erp-btn erp-btn-secondary w-full py-2 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                          !isFullyCovered
+                            ? 'opacity-50 cursor-not-allowed'
+                            : 'cursor-pointer'
+                        }`}
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>Save Only</span>
@@ -1467,142 +1506,19 @@ export default function CreateBillPage() {
       )}
 
       {/* Print & Bill Receipt Modal */}
-      {showPrintModal && lastSavedBill && (
-        <div
-          id="bill-receipt-modal-backdrop"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs erp-fade-in overflow-y-auto"
-        >
-          <div
-            id="bill-receipt-modal-card"
-            className="w-full max-w-lg bg-[var(--surface)] rounded-xl border border-[var(--border)] shadow-2xl overflow-hidden erp-slide-up my-6"
-          >
-            {/* Modal Actions Bar (hidden when printing) */}
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-[var(--border)] bg-[var(--surface-subtle)] print:hidden">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-[var(--success)]" />
-                <h3 className="font-bold text-sm text-[var(--text-primary)]">
-                  Bill Saved Successfully!
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPrintModal(false);
-                  handleResetBillForm();
-                }}
-                className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Printable Receipt Body */}
-            <div id="printable-receipt-area" className="p-6 bg-white text-black space-y-4 font-mono text-xs">
-              {/* Receipt Header */}
-              <div className="text-center border-b border-dashed border-gray-300 pb-3">
-                <h2 className="text-base font-bold tracking-tight">LAKSHMI SATYANARAYANA ENTERPRISES</h2>
-                <p className="text-[10px] text-gray-600">Opp. andhra bank, main road, amaravathi</p>
-                <p className="text-[10px] text-gray-600">Mobile: 9063532585</p>
-                <div className="mt-2 text-[11px] flex justify-between border-t border-gray-200 pt-1">
-                  <span>Bill No: {lastSavedBill.bill_id}</span>
-                  <span>Date: {new Date(lastSavedBill.created_at).toLocaleDateString()}</span>
-                </div>
-              </div>
-
-              {/* Customer Info if present */}
-              {selectedCustomer && (
-                <div className="border-b border-dashed border-gray-300 pb-2 text-[11px]">
-                  <div>Customer: <strong>{selectedCustomer.name}</strong></div>
-                  <div>Mobile: {selectedCustomer.mobile}</div>
-                </div>
-              )}
-
-              {/* Items List */}
-              <table className="w-full text-left text-[11px]">
-                <thead>
-                  <tr className="border-b border-gray-400">
-                    <th className="py-1">Item</th>
-                    <th className="py-1 text-center">Qty</th>
-                    <th className="py-1 text-right">Price</th>
-                    <th className="py-1 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {items.map((item, i) => (
-                    <tr key={i}>
-                      <td className="py-1">{item.product_name}</td>
-                      <td className="py-1 text-center">{item.quantity}</td>
-                      <td className="py-1 text-right">₹{item.selling_price.toFixed(2)}</td>
-                      <td className="py-1 text-right">₹{item.row_total.toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              {/* Totals Breakdown */}
-              <div className="border-t border-dashed border-gray-400 pt-2 space-y-1 text-right">
-                <div className="flex justify-between">
-                  <span>Subtotal:</span>
-                  <span>₹{lastSavedBill.sub_total.toFixed(2)}</span>
-                </div>
-                {lastSavedBill.discount > 0 && (
-                  <div className="flex justify-between text-gray-600">
-                    <span>Discount:</span>
-                    <span>-₹{lastSavedBill.discount.toFixed(2)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-sm font-bold border-t border-gray-400 pt-1">
-                  <span>Grand Total:</span>
-                  <span>₹{lastSavedBill.total.toFixed(2)}</span>
-                </div>
-              </div>
-
-              {/* Footer Notice */}
-              <div className="text-center text-[10px] text-gray-500 border-t border-dashed border-gray-300 pt-3">
-                <p>Thank you for your business!</p>
-                <p>Visit Again</p>
-              </div>
-            </div>
-
-            {/* Modal Controls */}
-            <div className="p-4 border-t border-[var(--border)] bg-[var(--surface-subtle)] flex items-center justify-between gap-2.5 print:hidden">
-              <button
-                id="whatsapp-bill-btn"
-                type="button"
-                onClick={handleSendWhatsAppBill}
-                className="erp-btn bg-[#25D366] hover:bg-[#20ba59] text-white border-transparent text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
-                title="Send Bill details via WhatsApp"
-              >
-                <MessageCircle className="w-4 h-4" />
-                <span>WhatsApp Bill</span>
-              </button>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPrintModal(false);
-                    handleResetBillForm();
-                  }}
-                  className="erp-btn erp-btn-outline text-xs cursor-pointer"
-                >
-                  Done / Next Bill
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    window.print();
-                  }}
-                  className="erp-btn erp-btn-primary text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>Print Receipt</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <PrintBillModal
+        isOpen={showPrintModal && !!savedBillSnapshot}
+        onClose={() => {
+          setShowPrintModal(false);
+          handleResetBillForm();
+        }}
+        bill={savedBillSnapshot?.bill || null}
+        items={savedBillSnapshot?.items || []}
+        customer={savedBillSnapshot?.customer}
+        associate={savedBillSnapshot?.associate}
+        payments={savedBillSnapshot?.payments}
+        onNextBill={handleResetBillForm}
+      />
 
       {/* Attach Associate Modal */}
       <AttachAssociate

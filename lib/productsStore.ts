@@ -605,6 +605,163 @@ export async function createProduct(
 }
 
 /**
+ * Create multiple products in batch in Supabase.
+ */
+export async function createMultipleProducts(
+  inputs: CreateProductInput[]
+): Promise<{ data: Product[] | null; error: string | null; count?: number }> {
+  try {
+    if (!inputs || inputs.length === 0) {
+      return { data: null, error: 'No products provided for insertion.' };
+    }
+
+    // Validation for each item
+    const seenCodes = new Set<string>();
+    for (let i = 0; i < inputs.length; i++) {
+      const p = inputs[i];
+      const rowNum = i + 1;
+      const cleanCode = (p.product_id || '').trim().toUpperCase();
+      const cleanName = (p.name || '').trim();
+
+      if (!cleanCode) {
+        return { data: null, error: `Row #${rowNum}: Product ID / Code is required.` };
+      }
+      if (!cleanName) {
+        return { data: null, error: `Row #${rowNum} (${cleanCode}): Product Name is required.` };
+      }
+      if (!p.category_id) {
+        return { data: null, error: `Row #${rowNum} (${cleanName}): Category selection is required.` };
+      }
+      if (Number(p.quantity) < 0) {
+        return { data: null, error: `Row #${rowNum}: Quantity cannot be negative.` };
+      }
+      if (Number(p.selling_price) < 0) {
+        return { data: null, error: `Row #${rowNum}: Selling Price cannot be negative.` };
+      }
+      if (Number(p.mrp) < 0) {
+        return { data: null, error: `Row #${rowNum}: MRP/Purchase Price cannot be negative.` };
+      }
+
+      if (seenCodes.has(cleanCode)) {
+        return {
+          data: null,
+          error: `Duplicate Product Code "${cleanCode}" found across rows in current batch. Each code must be unique.`,
+        };
+      }
+      seenCodes.add(cleanCode);
+    }
+
+    if (!isSupabaseConfigured) {
+      const createdList: Product[] = [];
+      for (const input of inputs) {
+        const newProduct: Product = {
+          id: crypto.randomUUID(),
+          name: input.name.trim(),
+          product_id: input.product_id.trim().toUpperCase(),
+          category_id: input.category_id,
+          quantity: Number(input.quantity || 0),
+          discount: Number(input.discount || 0),
+          selling_price: Number(input.selling_price || 0),
+          mrp: Number(input.mrp || 0),
+          low_stock: Number(input.low_stock || 10),
+          unit: input.unit || 'Piece',
+          status: input.status || 'active',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        FALLBACK_PRODUCTS.unshift(newProduct);
+        createdList.push(newProduct);
+      }
+      return { data: createdList, error: null, count: createdList.length };
+    }
+
+    // Check if any product_id already exists in Supabase
+    const codeList = Array.from(seenCodes);
+    const { data: existingRecords, error: checkErr } = await supabase
+      .from('products')
+      .select('product_id')
+      .in('product_id', codeList);
+
+    if (checkErr) {
+      console.error('Error checking existing product codes:', checkErr);
+    } else if (existingRecords && existingRecords.length > 0) {
+      const dups = existingRecords.map((r: any) => r.product_id).join(', ');
+      return {
+        data: null,
+        error: `The following Product Code(s) already exist in database: ${dups}. Please use unique codes.`,
+      };
+    }
+
+    const now = new Date().toISOString();
+    const rowsToInsert = inputs.map((p) => ({
+      name: p.name.trim(),
+      product_id: p.product_id.trim().toUpperCase(),
+      category_id: p.category_id,
+      quantity: Number(p.quantity || 0),
+      discount: Number(p.discount || 0),
+      selling_price: Number(p.selling_price || 0),
+      mrp: Number(p.mrp || 0),
+      low_stock: Number(p.low_stock || 10),
+      unit: p.unit || 'Piece',
+      status: p.status || 'active',
+      created_at: now,
+      updated_at: now,
+    }));
+
+    const { data, error } = await supabase
+      .from('products')
+      .insert(rowsToInsert)
+      .select(`
+        id,
+        name,
+        product_id,
+        category_id,
+        quantity,
+        discount,
+        selling_price,
+        mrp,
+        low_stock,
+        unit,
+        status,
+        created_at,
+        updated_at,
+        categories (
+          id,
+          category_id,
+          category_name
+        )
+      `);
+
+    if (error) {
+      console.error('Error batch inserting products:', error);
+      return { data: null, error: error.message };
+    }
+
+    const createdList: Product[] = (data || []).map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      product_id: row.product_id,
+      category_id: row.category_id,
+      quantity: Number(row.quantity ?? 0),
+      discount: Number(row.discount ?? 0),
+      selling_price: Number(row.selling_price ?? 0),
+      mrp: Number(row.mrp ?? 0),
+      low_stock: Number(row.low_stock ?? 0),
+      unit: row.unit || 'Piece',
+      status: (row.status as ProductStatus) || 'active',
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      category: extractCategory(row.categories),
+    }));
+
+    return { data: createdList, error: null, count: createdList.length };
+  } catch (err: any) {
+    console.error('Unexpected error in createMultipleProducts:', err);
+    return { data: null, error: err?.message || 'Failed to insert products' };
+  }
+}
+
+/**
  * Update all fields of an existing product in Supabase.
  */
 export async function updateProduct(
