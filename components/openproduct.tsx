@@ -13,13 +13,11 @@ import {
   ShieldAlert,
   Clock,
   Calendar,
-  Trash2,
   AlertTriangle,
   Percent,
 } from 'lucide-react';
 import {
   updateProduct,
-  deleteProduct,
   fetchCategoriesForDropdown,
   ProductStatus,
   Product,
@@ -41,7 +39,6 @@ export default function OpenProductModal({
   isOpen,
   onClose,
   onSuccess,
-  onDeleteSuccess,
 }: OpenProductProps) {
   if (!isOpen || !product) return null;
 
@@ -50,7 +47,6 @@ export default function OpenProductModal({
       product={product}
       onClose={onClose}
       onSuccess={onSuccess}
-      onDeleteSuccess={onDeleteSuccess}
     />
   );
 }
@@ -59,12 +55,10 @@ function OpenProductModalContent({
   product,
   onClose,
   onSuccess,
-  onDeleteSuccess,
 }: {
   product: Product;
   onClose: () => void;
   onSuccess: (updatedProduct: Product) => void;
-  onDeleteSuccess?: (deletedId: string) => void;
 }) {
   const [name, setName] = useState(product.name || '');
   const [productId, setProductId] = useState(product.product_id || '');
@@ -80,8 +74,6 @@ function OpenProductModalContent({
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Auto calculate selling price when MRP changes (selling_price = mrp - (mrp * discount%) / 100)
@@ -227,29 +219,6 @@ function OpenProductModalContent({
       setError(res.error);
     } else if (res.data) {
       onSuccess(res.data);
-      onClose();
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      return;
-    }
-
-    setDeleting(true);
-    setError(null);
-
-    const res = await deleteProduct(product.id);
-    setDeleting(false);
-
-    if (res.error) {
-      setError(res.error);
-      setConfirmDelete(false);
-    } else {
-      if (onDeleteSuccess) {
-        onDeleteSuccess(product.id);
-      }
       onClose();
     }
   };
@@ -551,82 +520,42 @@ function OpenProductModalContent({
 
           {/* Bottom Action Controls & Small Last Updated Display */}
           <div className="pt-4 border-t border-[var(--border)] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-            
-            {/* Delete / Danger Option */}
-            <div className="flex items-center">
-              {confirmDelete ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-[var(--danger)] font-medium">Are you sure?</span>
-                  <button
-                    id="confirm-delete-product-btn"
-                    type="button"
-                    onClick={handleDelete}
-                    disabled={deleting}
-                    className="erp-btn erp-btn-danger text-xs py-1 px-2.5 cursor-pointer"
-                  >
-                    {deleting ? 'Deleting...' : 'Yes, Delete'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmDelete(false)}
-                    className="erp-btn erp-btn-ghost text-xs py-1 px-2 cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <button
-                  id="delete-product-btn"
-                  type="button"
-                  onClick={() => setConfirmDelete(true)}
-                  disabled={saving || deleting}
-                  className="inline-flex items-center gap-1.5 text-xs text-[var(--danger)] hover:bg-[var(--danger-light)] py-1.5 px-2.5 rounded-md border border-transparent hover:border-[var(--danger)] transition-colors cursor-pointer"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Delete Product</span>
-                </button>
-              )}
+            {/* Last Updated info on the left */}
+            <span className="text-xs text-[var(--text-muted)] flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+              <span>Last updated: {formatDate(product.updated_at)}</span>
+            </span>
+
+            {/* Action Buttons on the right */}
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                id="cancel-edit-product-btn"
+                type="button"
+                onClick={onClose}
+                disabled={saving}
+                className="erp-btn erp-btn-outline text-xs cursor-pointer"
+              >
+                Close
+              </button>
+              <button
+                id="save-edit-product-btn"
+                type="submit"
+                disabled={saving || loadingCategories}
+                className="erp-btn erp-btn-primary flex items-center gap-2 text-xs font-semibold cursor-pointer shadow-xs"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Saving Changes...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Save Changes</span>
+                  </>
+                )}
+              </button>
             </div>
-
-            {/* Right Buttons with small last updated text at bottom */}
-            <div className="flex flex-col items-end gap-1">
-              <div className="flex items-center gap-2.5">
-                <button
-                  id="cancel-edit-product-btn"
-                  type="button"
-                  onClick={onClose}
-                  disabled={saving || deleting}
-                  className="erp-btn erp-btn-outline text-xs cursor-pointer"
-                >
-                  Close
-                </button>
-                <button
-                  id="save-edit-product-btn"
-                  type="submit"
-                  disabled={saving || deleting || loadingCategories}
-                  className="erp-btn erp-btn-primary flex items-center gap-2 text-xs font-semibold cursor-pointer shadow-xs"
-                >
-                  {saving ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Saving Changes...</span>
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>Save Changes</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-              {/* Last Updated small text at bottom */}
-              <span className="text-[10px] text-[var(--text-muted)] flex items-center gap-1 pr-0.5">
-                <Clock className="w-3 h-3 text-[var(--text-muted)]" />
-                Last updated: {formatDate(product.updated_at)}
-              </span>
-            </div>
-
           </div>
         </form>
       </div>
