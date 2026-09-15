@@ -20,6 +20,7 @@ import { CreatedBillResult, BillItemInput, PaymentBreakdown } from '@/lib/create
 import { Customer } from '@/lib/customersStore';
 import { AssociateRecord } from '@/lib/adminassociateStore';
 import { sendWhatsAppBill } from '@/lib/whatsapp';
+import { generateBillPdf } from '@/lib/generateBillPdf';
 
 export interface PrintBillModalProps {
   isOpen: boolean;
@@ -44,9 +45,18 @@ export default function PrintBillModal({
 }: PrintBillModalProps) {
   if (!isOpen || !bill) return null;
 
-  const handlePrint = () => {
-    window.print();
-  };
+
+  const handleDownloadPdf = () => {
+  if (!bill) return;
+
+  generateBillPdf({
+    bill,
+    items,
+    customer,
+    associate,
+    payments,
+  });
+};
 
   const handleSendWhatsApp = () => {
     if (!bill) return;
@@ -324,14 +334,14 @@ export default function PrintBillModal({
                 Done / Next Bill
               </button>
               <button
-                id="print-receipt-dialog-btn"
-                type="button"
-                onClick={handlePrint}
-                className="erp-btn erp-btn-primary text-xs font-bold py-2 px-4 flex items-center justify-center gap-1.5 cursor-pointer shadow-xs flex-1 sm:flex-none"
-              >
-                <Printer className="w-4 h-4" />
-                <span>Print Receipt</span>
-              </button>
+  id="download-bill-pdf-btn"
+  type="button"
+  onClick={handleDownloadPdf}
+  className="erp-btn erp-btn-primary text-xs font-bold py-2 px-4 flex items-center justify-center gap-1.5 cursor-pointer shadow-xs flex-1 sm:flex-none"
+>
+  <Printer className="w-4 h-4" />
+  <span>Download PDF</span>
+</button>
             </div>
           </div>
         </div>
