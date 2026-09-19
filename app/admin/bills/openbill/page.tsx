@@ -528,6 +528,7 @@ function OpenBillContent() {
 
   if (printAfter) {
     const printBill: CreatedBillResult = {
+      id: billDbId,
       bill_id: billCode,
       sub_total: subTotal,
       discount: discountVal,
@@ -700,6 +701,7 @@ function OpenBillContent() {
   type="button"
   onClick={() => {
     const printBill: CreatedBillResult = {
+      id: billDbId,
       bill_id: billCode,
       sub_total: subTotal,
       discount: discountVal,
