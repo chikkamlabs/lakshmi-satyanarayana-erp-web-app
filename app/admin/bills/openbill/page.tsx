@@ -532,8 +532,7 @@ function OpenBillContent() {
       sub_total: subTotal,
       discount: discountVal,
       total: totalAmount,
-      status: newStatus,
-      type: billType,
+      status: newStatus === 'cancelled' ? 'pending' : newStatus,
       created_at: createdAt || new Date().toISOString(),
     };
 
@@ -706,7 +705,6 @@ function OpenBillContent() {
       discount: discountVal,
       total: totalAmount,
       status: billStatus === 'cancelled' ? 'pending' : billStatus,
-      type: billType,
       created_at: createdAt || new Date().toISOString(),
     };
 
