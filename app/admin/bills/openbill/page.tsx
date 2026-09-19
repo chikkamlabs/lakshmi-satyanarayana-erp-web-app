@@ -40,9 +40,13 @@ import {
   searchProductsForBilling,
   searchCustomersForBilling,
   quickAddCustomer,
+   BillItemInput,
+   PaymentBreakdown,
+  CreatedBillResult,
 } from '@/lib/createbillStore';
 import { Product } from '@/lib/productsStore';
 import { Customer } from '@/lib/customersStore';
+import PrintBillModal from '@/components/printbill';
 
 function OpenBillContent() {
   const router = useRouter();
@@ -100,6 +104,14 @@ function OpenBillContent() {
   const [billError, setBillError] = useState<string | null>(null);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
   const [showPrintModal, setShowPrintModal] = useState(false);
+
+
+  const [savedBillSnapshot, setSavedBillSnapshot] = useState<{
+  bill: CreatedBillResult;
+  items: BillItemInput[];
+  customer?: Customer | null;
+  payments?: PaymentBreakdown;
+} | null>(null);
 
   // DOM Refs for keyboard flow
   const productSearchInputRef = useRef<HTMLInputElement | null>(null);
@@ -494,7 +506,7 @@ function OpenBillContent() {
       sub_total: subTotal,
       discount: discountVal,
       total: totalAmount,
-      status: newStatus,
+      status: newStatus === 'cancelled' ? 'pending' : newStatus,
       type: billType,
       payments: {
         cash: finalCash,
@@ -507,17 +519,51 @@ function OpenBillContent() {
     setSavingBill(false);
 
     if (res.error) {
-      setBillError(res.error);
-    } else if (res.data) {
-      setOriginalBill(res.data);
-      setBillStatus(res.data.status);
-      setUpdatedAt(res.data.updated_at);
-      setSaveSuccessMsg('Bill updated successfully without duplicate rows!');
+  setBillError(res.error);
+} else if (res.data) {
+  setOriginalBill(res.data);
+  setBillStatus(res.data.status);
+  setUpdatedAt(res.data.updated_at);
+  setSaveSuccessMsg('Bill updated successfully without duplicate rows!');
 
-      if (printAfter) {
-        setShowPrintModal(true);
-      }
-    }
+  if (printAfter) {
+    const printBill: CreatedBillResult = {
+      id: billDbId,
+      bill_id: billCode,
+      sub_total: subTotal,
+      discount: discountVal,
+      total: totalAmount,
+      status: newStatus === 'cancelled' ? 'pending' : newStatus,
+      created_at: createdAt || new Date().toISOString(),
+    };
+
+    const printItems: BillItemInput[] = items.map((item) => ({
+      product_id: item.product_id,
+      product_name: item.product_name,
+      product_code: item.product_code,
+      mrp: Number(item.mrp) || 0,
+      quantity: Number(item.quantity) || 0,
+      selling_price: Number(item.selling_price) || 0,
+      row_total: Number(item.row_total) || 0,
+      unit: item.unit,
+    }));
+
+    const printPayments: PaymentBreakdown = {
+      cash: finalCash,
+      upi: finalUpi,
+      credit: finalCredit,
+    };
+
+    setSavedBillSnapshot({
+      bill: printBill,
+      items: printItems,
+      customer: selectedCustomer,
+      payments: printPayments,
+    });
+
+    setShowPrintModal(true);
+  }
+}
   };
 
   const formatCurrency = (val: number) => {
@@ -652,13 +698,49 @@ function OpenBillContent() {
                 </button>
 
                 <button
-                  type="button"
-                  onClick={() => setShowPrintModal(true)}
-                  className="erp-btn erp-btn-secondary erp-btn-sm flex items-center gap-1.5 text-xs cursor-pointer"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>Print</span>
-                </button>
+  type="button"
+  onClick={() => {
+    const printBill: CreatedBillResult = {
+      id: billDbId,
+      bill_id: billCode,
+      sub_total: subTotal,
+      discount: discountVal,
+      total: totalAmount,
+      status: billStatus === 'cancelled' ? 'pending' : billStatus,
+      created_at: createdAt || new Date().toISOString(),
+    };
+
+    const printItems: BillItemInput[] = items.map((item) => ({
+      product_id: item.product_id,
+      product_name: item.product_name,
+      product_code: item.product_code,
+      mrp: Number(item.mrp) || 0,
+      quantity: Number(item.quantity) || 0,
+      selling_price: Number(item.selling_price) || 0,
+      row_total: Number(item.row_total) || 0,
+      unit: item.unit,
+    }));
+
+    const printPayments: PaymentBreakdown = {
+      cash: numCash,
+      upi: numUpi,
+      credit: numCredit,
+    };
+
+    setSavedBillSnapshot({
+      bill: printBill,
+      items: printItems,
+      customer: selectedCustomer,
+      payments: printPayments,
+    });
+
+    setShowPrintModal(true);
+  }}
+  className="erp-btn erp-btn-secondary erp-btn-sm flex items-center gap-1.5 text-xs cursor-pointer"
+>
+  <Printer className="w-3.5 h-3.5" />
+  <span>Print</span>
+</button>
               </div>
             </div>
 
@@ -1351,113 +1433,17 @@ function OpenBillContent() {
       )}
 
       {/* Print Receipt Modal */}
-      {showPrintModal && (
-        <div
-          id="openbill-receipt-modal-backdrop"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs erp-fade-in overflow-y-auto"
-        >
-          <div
-            id="openbill-receipt-modal-card"
-            className="w-full max-w-lg bg-[var(--surface)] rounded-xl border border-[var(--border)] shadow-2xl overflow-hidden erp-slide-up my-6"
-          >
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-[var(--border)] bg-[var(--surface-subtle)] print:hidden">
-              <div className="flex items-center gap-2">
-                <Printer className="w-4 h-4 text-[var(--primary)]" />
-                <h3 className="font-bold text-sm text-[var(--text-primary)]">
-                  Bill Receipt ({billCode})
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowPrintModal(false)}
-                className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div id="printable-receipt-area" className="p-6 bg-white text-black space-y-4 font-mono text-xs">
-              <div className="text-center border-b border-dashed border-gray-300 pb-3">
-                <h2 className="text-base font-bold tracking-tight">DS DRY FRUITS</h2>
-                <p className="text-[11px] text-gray-600">Lakshmi Satyanarayana Enterprises</p>
-                <p className="text-[10px] text-gray-500">Retail &amp; Wholesale POS</p>
-                <div className="mt-2 text-[11px] flex justify-between border-t border-gray-200 pt-1">
-                  <span>Bill No: {billCode}</span>
-                  <span>Date: {new Date().toLocaleDateString()}</span>
-                </div>
-              </div>
-
-              {selectedCustomer && (
-                <div className="border-b border-dashed border-gray-300 pb-2 text-[11px]">
-                  <div>Customer: <strong>{selectedCustomer.name}</strong></div>
-                  <div>Mobile: {selectedCustomer.mobile}</div>
-                </div>
-              )}
-
-              <table className="w-full text-left text-[11px]">
-                <thead>
-                  <tr className="border-b border-gray-400">
-                    <th className="py-1">Item</th>
-                    <th className="py-1 text-center">Qty</th>
-                    <th className="py-1 text-right">Price</th>
-                    <th className="py-1 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {items.map((item, i) => (
-                    <tr key={i}>
-                      <td className="py-1">{item.product_name}</td>
-                      <td className="py-1 text-center">{item.quantity}</td>
-                      <td className="py-1 text-right">₹{item.selling_price.toFixed(2)}</td>
-                      <td className="py-1 text-right">₹{item.row_total.toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <div className="border-t border-dashed border-gray-400 pt-2 space-y-1 text-right">
-                <div className="flex justify-between">
-                  <span>Subtotal:</span>
-                  <span>₹{subTotal.toFixed(2)}</span>
-                </div>
-                {discountVal > 0 && (
-                  <div className="flex justify-between text-gray-600">
-                    <span>Discount:</span>
-                    <span>-₹{discountVal.toFixed(2)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-sm font-bold border-t border-gray-400 pt-1">
-                  <span>Grand Total:</span>
-                  <span>₹{totalAmount.toFixed(2)}</span>
-                </div>
-              </div>
-
-              <div className="text-center text-[10px] text-gray-500 border-t border-dashed border-gray-300 pt-3">
-                <p>Thank you for your business!</p>
-                <p className="mt-1">Last Updated: {formatDateTime(updatedAt)}</p>
-              </div>
-            </div>
-
-            <div className="p-4 border-t border-[var(--border)] bg-[var(--surface-subtle)] flex items-center justify-end gap-2.5 print:hidden">
-              <button
-                type="button"
-                onClick={() => setShowPrintModal(false)}
-                className="erp-btn erp-btn-outline text-xs cursor-pointer"
-              >
-                Close
-              </button>
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="erp-btn erp-btn-primary text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                <span>Print Receipt</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <PrintBillModal
+  isOpen={showPrintModal && !!savedBillSnapshot}
+  onClose={() => {
+    setShowPrintModal(false);
+    setSavedBillSnapshot(null);
+  }}
+  bill={savedBillSnapshot?.bill || null}
+  items={savedBillSnapshot?.items || []}
+  customer={savedBillSnapshot?.customer}
+  payments={savedBillSnapshot?.payments}
+/>
     </div>
   );
 }
